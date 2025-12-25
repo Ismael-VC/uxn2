@@ -14,7 +14,6 @@
 #include "devices/screen.h"
 #include "devices/audio.h"
 #include "devices/file.h"
-#include "devices/controller.h"
 #include "devices/mouse.h"
 #if defined(_WIN32) && defined(_WIN32_WINNT) && _WIN32_WINNT > 0x0602
 #include <processthreadsapi.h>
@@ -77,6 +76,48 @@ audio_deo(int instance, Uint8 *d, Uint8 port)
 		audio_start(instance, d);
 		SDL_UnlockAudioDevice(audio_id);
 		SDL_PauseAudioDevice(audio_id, 0);
+	}
+}
+
+/*
+@|Controller -------------------------------------------------------- */
+
+static unsigned int controller_vector;
+
+
+void
+controller_down(Uint8 mask)
+{
+	if(mask) {
+		uxn.dev[0x82] |= mask;
+		uxn_eval(controller_vector);
+	}
+}
+
+void
+controller_up(Uint8 mask)
+{
+	if(mask) {
+		uxn.dev[0x82] &= (~mask);
+		uxn_eval(controller_vector);
+	}
+}
+
+void
+controller_key(Uint8 key)
+{
+	if(key) {
+		uxn.dev[0x83] = key;
+		uxn_eval(controller_vector);
+		uxn.dev[0x83] = 0;
+	}
+}
+
+void
+controller_deo(Uint8 addr)
+{
+	switch(addr) {
+	case 0x81: controller_vector = PEEK2(&uxn.dev[0x80]); break;
 	}
 }
 
