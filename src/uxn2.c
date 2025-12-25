@@ -14,7 +14,6 @@
 #include "devices/screen.h"
 #include "devices/audio.h"
 #include "devices/file.h"
-#include "devices/mouse.h"
 #if defined(_WIN32) && defined(_WIN32_WINNT) && _WIN32_WINNT > 0x0602
 #include <processthreadsapi.h>
 #elif defined(_WIN32)
@@ -84,7 +83,6 @@ audio_deo(int instance, Uint8 *d, Uint8 port)
 
 static unsigned int controller_vector;
 
-
 void
 controller_down(Uint8 mask)
 {
@@ -118,6 +116,51 @@ controller_deo(Uint8 addr)
 {
 	switch(addr) {
 	case 0x81: controller_vector = PEEK2(&uxn.dev[0x80]); break;
+	}
+}
+
+/*
+@|Mouse ------------------------------------------------------------- */
+
+static unsigned int mouse_vector;
+
+void
+mouse_down(Uint8 mask)
+{
+	uxn.dev[0x96] |= mask;
+	uxn_eval(mouse_vector);
+}
+
+void
+mouse_up(Uint8 mask)
+{
+	uxn.dev[0x96] &= (~mask);
+	uxn_eval(mouse_vector);
+}
+
+void
+mouse_pos(Uint16 x, Uint16 y)
+{
+	uxn.dev[0x92] = x >> 8, uxn.dev[0x93] = x;
+	uxn.dev[0x94] = y >> 8, uxn.dev[0x95] = y;
+	uxn_eval(mouse_vector);
+}
+
+void
+mouse_scroll(Uint16 x, Uint16 y)
+{
+	uxn.dev[0x9a] = x >> 8, uxn.dev[0x9b] = x;
+	uxn.dev[0x9c] = -y >> 8, uxn.dev[0x9d] = -y;
+	uxn_eval(mouse_vector);
+	uxn.dev[0x9a] = 0, uxn.dev[0x9b] = 0;
+	uxn.dev[0x9c] = 0, uxn.dev[0x9d] = 0;
+}
+
+void
+mouse_deo(Uint8 addr)
+{
+	switch(addr) {
+	case 0x91: mouse_vector = PEEK2(&uxn.dev[0x90]); break;
 	}
 }
 

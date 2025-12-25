@@ -4,7 +4,7 @@ SDL_LIBS   := $(shell sdl2-config --libs)
 CC_flags=--std=c89 -Wall -Wno-unknown-pragmas
 RELEASE_flags=-DNDEBUG -O2 -g0 -s -L/usr/local/lib 
 DEBUG_flags=-DDEBUG -Wpedantic -Wshadow -Wextra -Werror=implicit-int -Werror=incompatible-pointer-types -Werror=int-conversion -Wvla -g -Og -fsanitize=address -fsanitize=undefined -L/usr/local/lib
-FILES=src/uxn.c src/devices/system.c src/devices/console.c src/devices/file.c src/devices/mouse.c src/devices/screen.c src/devices/audio.c src/uxn2.c
+FILES=src/uxn.c src/devices/system.c src/devices/console.c src/devices/file.c src/devices/screen.c src/devices/audio.c src/uxn2.c
 
 run: bin/uxn2
 	@ bin/uxn2 bin/perifs.rom
