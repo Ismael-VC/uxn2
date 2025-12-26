@@ -1,10 +1,10 @@
 SDL_CFLAGS := $(shell sdl2-config --cflags)
 SDL_LIBS   := $(shell sdl2-config --libs)
 
-CC_flags=--std=c89 -Wall -Wno-unknown-pragmas
+CC_flags=--std=c99 -Wall -Wno-unknown-pragmas
 RELEASE_flags=-DNDEBUG -O2 -g0 -s -L/usr/local/lib 
 DEBUG_flags=-DDEBUG -Wpedantic -Wshadow -Wextra -Werror=implicit-int -Werror=incompatible-pointer-types -Werror=int-conversion -Wvla -g -Og -fsanitize=address -fsanitize=undefined -L/usr/local/lib
-FILES=src/uxn.c src/uxn2.c
+FILES=src/uxn2.c
 
 run: bin/uxn2
 	@ bin/uxn2 bin/perifs.rom

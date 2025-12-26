@@ -1,26 +1,15 @@
 #define _XOPEN_SOURCE 500
-#include <stdio.h>
-#include <time.h>
-#include <string.h>
-#include <unistd.h>
-
-#include "uxn.h"
-
-#pragma GCC diagnostic push
-#pragma clang diagnostic push
-#pragma GCC diagnostic ignored "-Wpedantic"
-#pragma clang diagnostic ignored "-Wtypedef-redefinition"
 #include <SDL.h>
+
 #if defined(_WIN32) && defined(_WIN32_WINNT) && _WIN32_WINNT > 0x0602
 #include <processthreadsapi.h>
 #elif defined(_WIN32)
 #include <windows.h>
 #endif
+
 #ifndef __plan9__
 #define USED(x) (void)(x)
 #endif
-#pragma GCC diagnostic pop
-#pragma clang diagnostic pop
 
 /*
 Copyright (c) 2021-2025 Devine Lu Linvega, Andrew Alderwick
@@ -37,9 +26,9 @@ WITH REGARD TO THIS SOFTWARE.
 #define BANKS_CAP BANKS * 0x10000
 #define WIDTH 64 * 8
 #define HEIGHT 40 * 8
-
-Uxn uxn;
-int console_vector;
+#define STEP_MAX 0x80000000
+#define PAGE_PROGRAM 0x0100
+#define PAGE_SIZE 0x10000
 
 static SDL_Window *emu_window;
 static SDL_Texture *emu_texture;
@@ -48,7 +37,109 @@ static SDL_Rect emu_viewport;
 static SDL_AudioDeviceID audio_id;
 static SDL_Thread *stdin_thread;
 
-/* devices */
+/* clang-format off */
+
+#define PEEK2(d) (*(d) << 8 | (d)[1])
+#define POKE2(d, v) { *(d) = (v) >> 8; (d)[1] = (v); }
+
+typedef struct {
+	Uint8 dat[0x100], ptr;
+} Stack;
+
+typedef struct Uxn {
+	Uint8 *ram, dev[0x100];
+	Stack wst, rst;
+} Uxn;
+
+Uxn uxn;
+
+Uint8 emu_dei(Uint8 addr);
+void emu_deo( Uint8 addr, Uint8 value);
+
+#define OPC(opc, init, body) {\
+	case 0x00|opc: {const int _2=0,_r=0;init body;} break;\
+	case 0x20|opc: {const int _2=1,_r=0;init body;} break;\
+	case 0x40|opc: {const int _2=0,_r=1;init body;} break;\
+	case 0x60|opc: {const int _2=1,_r=1;init body;} break;\
+	case 0x80|opc: {const int _2=0,_r=0,k=uxn.wst.ptr;init uxn.wst.ptr=k;body;} break;\
+	case 0xa0|opc: {const int _2=1,_r=0,k=uxn.wst.ptr;init uxn.wst.ptr=k;body;} break;\
+	case 0xc0|opc: {const int _2=0,_r=1,k=uxn.rst.ptr;init uxn.rst.ptr=k;body;} break;\
+	case 0xe0|opc: {const int _2=1,_r=1,k=uxn.rst.ptr;init uxn.rst.ptr=k;body;} break;\
+}
+
+/* Microcode */
+
+#define JMI a = uxn.ram[pc] << 8 | uxn.ram[pc + 1], pc += a + 2;
+#define REM if(_r) uxn.rst.ptr -= 1 + _2; else uxn.wst.ptr -= 1 + _2;
+#define INC(s) uxn.s.dat[uxn.s.ptr++]
+#define DEC(s) uxn.s.dat[--uxn.s.ptr]
+#define JMP(x) { if(_2) pc = x; else pc += (Sint8)x; }
+#define PO1(o) { o = _r ? DEC(rst) : DEC(wst);}
+#define PO2(o) { if(_r) o = DEC(rst), o |= DEC(rst) << 8; else o = DEC(wst), o |= DEC(wst) << 8; }
+#define POx(o) { if(_2) PO2(o) else PO1(o) }
+#define PU1(i) { if(_r) INC(rst) = i; else INC(wst) = i; }
+#define RP1(i) { if(_r) INC(wst) = i; else INC(rst) = i; }
+#define PUx(i) { if(_2) { c = (i); PU1(c >> 8) PU1(c) } else PU1(i) }
+#define GET(o) { if(_2) PO1(o[1]) PO1(o[0]) }
+#define PUT(i) { PU1(i[0]) if(_2) PU1(i[1]) }
+#define DEI(i,o) o[0] = emu_dei(i); if(_2) o[1] = emu_dei(i + 1); PUT(o)
+#define DEO(i,j) emu_deo(i, j[0]); if(_2) emu_deo(i + 1, j[1]);
+#define PEK(i,o,m) o[0] = uxn.ram[i]; if(_2) o[1] = uxn.ram[(i + 1) & m]; PUT(o)
+#define POK(i,j,m) uxn.ram[i] = j[0]; if(_2) uxn.ram[(i + 1) & m] = j[1];
+
+int
+uxn_eval(Uint16 pc)
+{
+	unsigned int a, b, c, x[2], y[2], z[2], step;
+	if(!pc || uxn.dev[0x0f]) return 0;
+	for(step = STEP_MAX; step; step--) {
+		switch(uxn.ram[pc++]) {
+		/* BRK */ case 0x00: return 1;
+		/* JCI */ case 0x20: if(DEC(wst)) { JMI break; } pc += 2; break;
+		/* JMI */ case 0x40: JMI break;
+		/* JSI */ case 0x60: c = pc + 2; INC(rst) = c >> 8; INC(rst) = c; JMI break;
+		/* LI2 */ case 0xa0: INC(wst) = uxn.ram[pc++]; /* fall-through */
+		/* LIT */ case 0x80: INC(wst) = uxn.ram[pc++]; break;
+		/* L2r */ case 0xe0: INC(rst) = uxn.ram[pc++]; /* fall-through */
+		/* LIr */ case 0xc0: INC(rst) = uxn.ram[pc++]; break;
+		/* INC */ OPC(0x01,POx(a),PUx(a + 1))
+		/* POP */ OPC(0x02,REM   ,{})
+		/* NIP */ OPC(0x03,GET(x) REM   ,PUT(x))
+		/* SWP */ OPC(0x04,GET(x) GET(y),PUT(x) PUT(y))
+		/* ROT */ OPC(0x05,GET(x) GET(y) GET(z),PUT(y) PUT(x) PUT(z))
+		/* DUP */ OPC(0x06,GET(x),PUT(x) PUT(x))
+		/* OVR */ OPC(0x07,GET(x) GET(y),PUT(y) PUT(x) PUT(y))
+		/* EQU */ OPC(0x08,POx(a) POx(b),PU1(b == a))
+		/* NEQ */ OPC(0x09,POx(a) POx(b),PU1(b != a))
+		/* GTH */ OPC(0x0a,POx(a) POx(b),PU1(b > a))
+		/* LTH */ OPC(0x0b,POx(a) POx(b),PU1(b < a))
+		/* JMP */ OPC(0x0c,POx(a),JMP(a))
+		/* JCN */ OPC(0x0d,POx(a) PO1(b),if(b) JMP(a))
+		/* JSR */ OPC(0x0e,POx(a),RP1(pc >> 8) RP1(pc) JMP(a))
+		/* STH */ OPC(0x0f,GET(x),RP1(x[0]) if(_2) RP1(x[1]))
+		/* LDZ */ OPC(0x10,PO1(a),PEK(a, x, 0xff))
+		/* STZ */ OPC(0x11,PO1(a) GET(y),POK(a, y, 0xff))
+		/* LDR */ OPC(0x12,PO1(a),PEK(pc + (Sint8)a, x, 0xffff))
+		/* STR */ OPC(0x13,PO1(a) GET(y),POK(pc + (Sint8)a, y, 0xffff))
+		/* LDA */ OPC(0x14,PO2(a),PEK(a, x, 0xffff))
+		/* STA */ OPC(0x15,PO2(a) GET(y),POK(a, y, 0xffff))
+		/* DEI */ OPC(0x16,PO1(a),DEI(a, x))
+		/* DEO */ OPC(0x17,PO1(a) GET(y),DEO(a, y))
+		/* ADD */ OPC(0x18,POx(a) POx(b),PUx(b + a))
+		/* SUB */ OPC(0x19,POx(a) POx(b),PUx(b - a))
+		/* MUL */ OPC(0x1a,POx(a) POx(b),PUx(b * a))
+		/* DIV */ OPC(0x1b,POx(a) POx(b),PUx(a ? b / a : 0))
+		/* AND */ OPC(0x1c,POx(a) POx(b),PUx(b & a))
+		/* ORA */ OPC(0x1d,POx(a) POx(b),PUx(b | a))
+		/* EOR */ OPC(0x1e,POx(a) POx(b),PUx(b ^ a))
+		/* SFT */ OPC(0x1f,PO1(a) POx(b),PUx(b >> (a & 0xf) << (a >> 4)))
+		}
+	}
+	return 0;
+}
+
+/* clang-format on */
+
 
 /*
 @|System ------------------------------------------------------------ */
@@ -200,6 +291,8 @@ system_deo(Uint8 port)
 /*
 @|Console ----------------------------------------------------------- */
 
+int console_vector;
+
 #define CONSOLE_STD 0x1
 #define CONSOLE_ARG 0x2
 #define CONSOLE_EOA 0x3
@@ -242,10 +335,14 @@ static Uint32 stdin_event, audio0_event, zoom = 1;
 /*
 @|Screen ------------------------------------------------------------ */
 
+static int rX, rY, rA, rMX, rMY, rMA, rML, rDX, rDY;
+
 /* clang-format off */
 
 #define clamp(v,a,b) { if(v < a) v = a; else if(v >= b) v = b; }
 #define twos(v) (v & 0x8000 ? (int)v - 0x10000 : (int)v)
+#define MAR(x) (x + 0x8)
+#define MAR2(x) (x + 0x10)
 
 /* clang-format on */
 
@@ -256,11 +353,6 @@ typedef struct UxnScreen {
 } UxnScreen;
 
 UxnScreen uxn_screen;
-
-#define MAR(x) (x + 0x8)
-#define MAR2(x) (x + 0x10)
-
-/* c = !ch ? (color % 5 ? color >> 2 : 0) : color % 4 + ch == 1 ? 0 : (ch - 2 + (color & 3)) % 3 + 1; */
 
 static Uint8 blending[4][16] = {
 	{0, 0, 0, 0, 1, 0, 1, 1, 2, 2, 0, 2, 3, 3, 3, 0},
@@ -352,10 +444,6 @@ screen_redraw(void)
 	uxn_screen.x1 = uxn_screen.y1 = 9999;
 	uxn_screen.x2 = uxn_screen.y2 = 0;
 }
-
-/* screen registers */
-
-static int rX, rY, rA, rMX, rMY, rMA, rML, rDX, rDY;
 
 Uint8
 screen_dei(Uint8 addr)
@@ -486,17 +574,13 @@ screen_deo(Uint8 addr)
 /*
 @|Audio ------------------------------------------------------------- */
 
-typedef signed int Sint32;
-
 #define SAMPLE_FREQUENCY 44100
 #define POLYPHONY 4
+#define NOTE_PERIOD (SAMPLE_FREQUENCY * 0x4000 / 11025)
+#define ADSR_STEP (SAMPLE_FREQUENCY / 0xf)
 
 Uint8 audio_get_vu(int instance);
 Uint16 audio_get_position(int instance);
-
-
-#define NOTE_PERIOD (SAMPLE_FREQUENCY * 0x4000 / 11025)
-#define ADSR_STEP (SAMPLE_FREQUENCY / 0xf)
 
 typedef struct {
 	Uint8 *addr;
@@ -745,7 +829,6 @@ mouse_deo(Uint8 addr)
 #define POLYFILEY 2
 #define DEV_FILE0 0xa
 
-#include <stdio.h>
 #include <dirent.h>
 #include <errno.h>
 #include <limits.h>
@@ -774,17 +857,6 @@ mouse_deo(Uint8 addr)
 #ifndef PATH_MAX
 #define PATH_MAX 4096
 #endif
-
-/*
-Copyright (c) 2021-2023 Devine Lu Linvega, Andrew Alderwick
-
-Permission to use, copy, modify, and distribute this software for any
-purpose with or without fee is hereby granted, provided that the above
-copyright notice and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-WITH REGARD TO THIS SOFTWARE.
-*/
 
 typedef struct {
 	FILE *f;
@@ -1051,8 +1123,6 @@ file_delete(UxnFile *c)
 	return c->outside_sandbox ? 0 : unlink(c->current_filename);
 }
 
-/* IO */
-
 void
 file_deo(Uint8 port)
 {
@@ -1159,7 +1229,6 @@ datetime_dei(Uint8 addr)
 
 /*
 @|Core -------------------------------------------------------------- */
-
 
 Uint8
 emu_dei(Uint8 addr)
@@ -1542,7 +1611,7 @@ main(int argc, char **argv)
 	if(!emu_init())
 		return system_error("Init", "Failed to initialize varvara.");
 	if(!system_boot((Uint8 *)calloc(PAGE_SIZE * BANKS + 1, sizeof(Uint8)), rom_path, argc > i))
-		return system_error("usage:", "uxnemu [-v | -f | -2x | -3x] file.rom [args...]");
+		return system_error("usage:", "uxn2 [-v | -f | -2x | -3x] file.rom [args...]");
 	/* start */
 	console_arguments(i, argc, argv);
 	emu_run();
