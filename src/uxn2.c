@@ -261,7 +261,8 @@ console_deo(Uint8 addr)
 @|Screen ------------------------------------------------------------ */
 
 static int screen_width, screen_height;
-static int window_created, fullscreen, borderless;
+static int screen_x1, screen_y1, screen_x2, screen_y2;
+static unsigned int screen_vector;
 static Uint32 stdin_event, audio0_event, zoom = 1;
 static int rX, rY, rA, rMX, rMY, rMA, rML, rDX, rDY;
 
@@ -269,12 +270,14 @@ static int rX, rY, rA, rMX, rMY, rMA, rML, rDX, rDY;
 #define MAR2(x) (x + 0x10)
 
 typedef struct UxnScreen {
-	int width, height, vector, x1, y1, x2, y2, scale;
+	int vector, scale;
 	Uint32 palette[16], *pixels;
 	Uint8 *fg, *bg;
 } UxnScreen;
 
 UxnScreen uxn_screen;
+
+void emu_redraw(void);
 
 static Uint8 blending[4][16] = {
 	{0, 0, 0, 0, 1, 0, 1, 1, 2, 2, 0, 2, 3, 3, 3, 0},
@@ -287,21 +290,21 @@ int emu_resize(int width, int height);
 static int
 screen_changed(void)
 {
-	CLAMP(uxn_screen.x1, 0, screen_width);
-	CLAMP(uxn_screen.y1, 0, screen_height);
-	CLAMP(uxn_screen.x2, 0, screen_width);
-	CLAMP(uxn_screen.y2, 0, screen_height);
-	return uxn_screen.x2 > uxn_screen.x1 &&
-		uxn_screen.y2 > uxn_screen.y1;
+	CLAMP(screen_x1, 0, screen_width);
+	CLAMP(screen_y1, 0, screen_height);
+	CLAMP(screen_x2, 0, screen_width);
+	CLAMP(screen_y2, 0, screen_height);
+	return screen_x2 > screen_x1 &&
+		screen_y2 > screen_y1;
 }
 
 static void
 screen_change(int x1, int y1, int x2, int y2)
 {
-	if(x1 < uxn_screen.x1) uxn_screen.x1 = x1;
-	if(y1 < uxn_screen.y1) uxn_screen.y1 = y1;
-	if(x2 > uxn_screen.x2) uxn_screen.x2 = x2;
-	if(y2 > uxn_screen.y2) uxn_screen.y2 = y2;
+	if(x1 < screen_x1) screen_x1 = x1;
+	if(y1 < screen_y1) screen_y1 = y1;
+	if(x2 > screen_x2) screen_x2 = x2;
+	if(y2 > screen_y2) screen_y2 = y2;
 }
 
 static void
@@ -352,9 +355,9 @@ static void
 screen_redraw(void)
 {
 	int i, x, y, k, l;
-	for(y = uxn_screen.y1; y < uxn_screen.y2; y++) {
+	for(y = screen_y1; y < screen_y2; y++) {
 		int ys = y * uxn_screen.scale;
-		for(x = uxn_screen.x1, i = MAR(x) + MAR(y) * MAR2(screen_width); x < uxn_screen.x2; x++, i++) {
+		for(x = screen_x1, i = MAR(x) + MAR(y) * MAR2(screen_width); x < screen_x2; x++, i++) {
 			int c = uxn_screen.palette[uxn_screen.fg[i] << 2 | uxn_screen.bg[i]];
 			for(k = 0; k < uxn_screen.scale; k++) {
 				int oo = ((ys + k) * screen_width + x) * uxn_screen.scale;
@@ -363,15 +366,24 @@ screen_redraw(void)
 			}
 		}
 	}
-	uxn_screen.x1 = uxn_screen.y1 = 9999;
-	uxn_screen.x2 = uxn_screen.y2 = 0;
+	screen_x1 = screen_y1 = 9999;
+	screen_x2 = screen_y2 = 0;
+}
+
+static void
+screen_update(void)
+{
+	if(screen_vector)
+		uxn_eval(screen_vector);
+	if(screen_x2 && screen_y2 && screen_changed())
+		screen_redraw(), emu_redraw();
 }
 
 static void
 screen_deo(Uint8 addr)
 {
 	switch(addr) {
-	case 0x21: uxn_screen.vector = PEEK2(&dev[0x20]); return;
+	case 0x21: screen_vector = PEEK2(&dev[0x20]); return;
 	case 0x23: screen_resize(PEEK2(&dev[0x22]), screen_height, uxn_screen.scale); return;
 	case 0x25: screen_resize(screen_width, PEEK2(&dev[0x24]), uxn_screen.scale); return;
 	case 0x26: rMX = dev[0x26] & 0x1, rMY = dev[0x26] & 0x2, rMA = dev[0x26] & 0x4, rML = dev[0x26] >> 4, rDX = rMX << 3, rDY = rMY << 2; return;
@@ -1177,6 +1189,7 @@ emu_deo(Uint8 addr, Uint8 value)
 
 /* Handlers */
 
+static int window_created, fullscreen, borderless;
 static SDL_Window *emu_window;
 static SDL_Texture *emu_texture;
 static SDL_Renderer *emu_renderer;
@@ -1264,7 +1277,7 @@ emu_resize(int width, int height)
 	return 1;
 }
 
-static void
+void
 emu_redraw(void)
 {
 	if(SDL_UpdateTexture(emu_texture, NULL, uxn_screen.pixels, screen_width * sizeof(Uint32)) != 0)
@@ -1485,11 +1498,9 @@ emu_run(void)
 			return 0;
 		if(now >= next_refresh) {
 			next_refresh = now + frame_interval;
-			uxn_eval(uxn_screen.vector);
-			if(uxn_screen.x2 && uxn_screen.y2 && screen_changed())
-				screen_redraw(), emu_redraw();
+			screen_update();
 		}
-		if(uxn_screen.vector) {
+		if(screen_vector) {
 			now = SDL_GetPerformanceCounter();
 			if(now < next_refresh) {
 				Uint64 delay_ms = (next_refresh - now) / ms_interval;
