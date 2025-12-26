@@ -127,7 +127,7 @@ step:
 /*
 @|System ------------------------------------------------------------ */
 
-static char *boot_path;
+static char *system_boot_path;
 
 static void
 system_print(char *name, int r)
@@ -152,32 +152,27 @@ system_load(const char *rom_path)
 	return !!f;
 }
 
-static int
-system_error(char *msg, const char *err)
+static unsigned int
+system_boot(char *rom_path, const unsigned int has_args)
 {
-	fprintf(stderr, "%s: %s\n", msg, err), fflush(stderr);
-	return 0;
-}
-
-static int
-system_boot(Uint8 *mem, char *rom_path, int has_args)
-{
-	ram = mem;
-	boot_path = rom_path;
+	ram = (Uint8 *)calloc(BANKS_CAP, sizeof(Uint8));
+	system_boot_path = rom_path;
 	dev[0x17] = has_args;
-	if(mem && system_load(rom_path))
-		return uxn_eval(PAGE_PROGRAM);
-	return 0;
+	return ram && system_load(rom_path);
 }
 
-static int
-system_reboot(int soft)
+static unsigned int
+system_reboot(const unsigned int soft)
 {
-	int i;
-	for(i = 0x0; i < 0x100; i++) dev[i] = 0;
-	for(i = soft ? 0x100 : 0; i < PAGE_SIZE; i++) ram[i] = 0;
+	memset(dev, 0, 0x100);
+	memset(stk[0], 0, 0x100);
+	memset(stk[1], 0, 0x100);
+	if(soft)
+		memset(ram + 0x100, 0, 0xff00);
+	else
+		memset(ram, 0, 0x10000);
 	ptr[0] = ptr[1] = 0;
-	return system_boot(ram, boot_path, 0);
+	return system_load(system_boot_path);
 }
 
 static void
@@ -209,6 +204,13 @@ system_expansion(const Uint16 exp)
 				ram[dst_bank + c] = ram[bank + a];
 	} else
 		fprintf(stderr, "Unknown command: %s\n", &ram[exp]);
+}
+
+static int
+system_error(char *msg, const char *err)
+{
+	fprintf(stderr, "%s: %s\n", msg, err), fflush(stderr);
+	return 0;
 }
 
 /* IO */
@@ -1561,9 +1563,10 @@ main(int argc, char **argv)
 	rom_path = i == argc ? "boot.rom" : argv[i++];
 	if(!emu_init())
 		return system_error("Init", "Failed to initialize varvara.");
-	if(!system_boot((Uint8 *)calloc(PAGE_SIZE * BANKS + 1, sizeof(Uint8)), rom_path, argc > i))
+	if(!system_boot(rom_path, argc > i))
 		return system_error("usage:", "uxn2 [-v | -f | -2x | -3x] file.rom [args...]");
 	/* start */
+	uxn_eval(0x100);
 	console_arguments(i, argc, argv);
 	emu_run();
 	/* end */
