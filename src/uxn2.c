@@ -41,6 +41,8 @@ static SDL_Thread *stdin_thread;
 
 #define PEEK2(d) (*(d) << 8 | (d)[1])
 #define POKE2(d, v) { *(d) = (v) >> 8; (d)[1] = (v); }
+#define clamp(v,a,b) { if(v < a) v = a; else if(v >= b) v = b; }
+#define twos(v) (v & 0x8000 ? (int)v - 0x10000 : (int)v)
 
 #define NEXT if(--cycles) goto step; else return 0;
 
@@ -264,7 +266,8 @@ system_deo(Uint8 port)
 		metadata_addr = PEEK2(&dev[0x6]);
 		break;
 	case 0xe:
-		system_print("WST", 0), system_print("RST", 1); return;
+		system_print("WST", 0), system_print("RST", 1);
+		return;
 	}
 }
 
@@ -278,12 +281,12 @@ int console_vector;
 #define CONSOLE_EOA 0x3
 #define CONSOLE_END 0x4
 
-int
-console_input(int c, int type)
+static unsigned int
+console_input(int c, unsigned int type)
 {
 	if(c == EOF) c = 0, type = 4;
 	dev[0x12] = c, dev[0x17] = type;
-	uxn_eval(console_vector);
+	if(console_vector) uxn_eval(console_vector);
 	return type != 4;
 }
 
@@ -309,22 +312,15 @@ console_deo(Uint8 addr)
 	}
 }
 
-static int window_created, fullscreen, borderless;
-static Uint32 stdin_event, audio0_event, zoom = 1;
-
 /*
 @|Screen ------------------------------------------------------------ */
 
+static int window_created, fullscreen, borderless;
+static Uint32 stdin_event, audio0_event, zoom = 1;
 static int rX, rY, rA, rMX, rMY, rMA, rML, rDX, rDY;
 
-/* clang-format off */
-
-#define clamp(v,a,b) { if(v < a) v = a; else if(v >= b) v = b; }
-#define twos(v) (v & 0x8000 ? (int)v - 0x10000 : (int)v)
 #define MAR(x) (x + 0x8)
 #define MAR2(x) (x + 0x10)
-
-/* clang-format on */
 
 typedef struct UxnScreen {
 	int width, height, vector, x1, y1, x2, y2, scale;
@@ -722,30 +718,30 @@ audio_deo(int instance, Uint8 *d, Uint8 port)
 
 static unsigned int controller_vector;
 
-void
+static void
 controller_down(Uint8 mask)
 {
 	if(mask) {
 		dev[0x82] |= mask;
-		uxn_eval(controller_vector);
+		if(controller_vector) uxn_eval(controller_vector);
 	}
 }
 
-void
+static void
 controller_up(Uint8 mask)
 {
 	if(mask) {
 		dev[0x82] &= (~mask);
-		uxn_eval(controller_vector);
+		if(controller_vector) uxn_eval(controller_vector);
 	}
 }
 
-void
+static void
 controller_key(Uint8 key)
 {
 	if(key) {
 		dev[0x83] = key;
-		uxn_eval(controller_vector);
+		if(controller_vector) uxn_eval(controller_vector);
 		dev[0x83] = 0;
 	}
 }
@@ -763,34 +759,34 @@ controller_deo(Uint8 addr)
 
 static unsigned int mouse_vector;
 
-void
+static void
 mouse_down(Uint8 mask)
 {
 	dev[0x96] |= mask;
-	uxn_eval(mouse_vector);
+	if(mouse_vector) uxn_eval(mouse_vector);
 }
 
-void
+static void
 mouse_up(Uint8 mask)
 {
 	dev[0x96] &= (~mask);
-	uxn_eval(mouse_vector);
+	if(mouse_vector) uxn_eval(mouse_vector);
 }
 
-void
+static void
 mouse_pos(Uint16 x, Uint16 y)
 {
 	dev[0x92] = x >> 8, dev[0x93] = x;
 	dev[0x94] = y >> 8, dev[0x95] = y;
-	uxn_eval(mouse_vector);
+	if(mouse_vector) uxn_eval(mouse_vector);
 }
 
-void
+static void
 mouse_scroll(Uint16 x, Uint16 y)
 {
 	dev[0x9a] = x >> 8, dev[0x9b] = x;
 	dev[0x9c] = -y >> 8, dev[0x9d] = -y;
-	uxn_eval(mouse_vector);
+	if(mouse_vector) uxn_eval(mouse_vector);
 	dev[0x9a] = 0, dev[0x9b] = 0;
 	dev[0x9c] = 0, dev[0x9d] = 0;
 }
@@ -1562,7 +1558,7 @@ emu_run(void)
 			now = SDL_GetPerformanceCounter();
 			if(now < next_refresh) {
 				Uint64 delay_ms = (next_refresh - now) / ms_interval;
-				if (delay_ms > 0) SDL_Delay(delay_ms);
+				if(delay_ms > 0) SDL_Delay(delay_ms);
 			}
 		} else
 			SDL_WaitEvent(NULL);
