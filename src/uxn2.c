@@ -47,9 +47,10 @@ typedef struct {
 } Stack;
 
 typedef struct Uxn {
-	Uint8 *ram, dev[0x100];
 	Stack wst, rst;
 } Uxn;
+
+Uint8 *ram, dev[0x100];
 
 Uxn uxn;
 
@@ -69,7 +70,7 @@ void emu_deo( Uint8 addr, Uint8 value);
 
 /* Microcode */
 
-#define JMI a = uxn.ram[pc] << 8 | uxn.ram[pc + 1], pc += a + 2;
+#define JMI a = ram[pc] << 8 | ram[pc + 1], pc += a + 2;
 #define REM if(_r) uxn.rst.ptr -= 1 + _2; else uxn.wst.ptr -= 1 + _2;
 #define INC(s) uxn.s.dat[uxn.s.ptr++]
 #define DEC(s) uxn.s.dat[--uxn.s.ptr]
@@ -84,24 +85,24 @@ void emu_deo( Uint8 addr, Uint8 value);
 #define PUT(i) { PU1(i[0]) if(_2) PU1(i[1]) }
 #define DEI(i,o) o[0] = emu_dei(i); if(_2) o[1] = emu_dei(i + 1); PUT(o)
 #define DEO(i,j) emu_deo(i, j[0]); if(_2) emu_deo(i + 1, j[1]);
-#define PEK(i,o,m) o[0] = uxn.ram[i]; if(_2) o[1] = uxn.ram[(i + 1) & m]; PUT(o)
-#define POK(i,j,m) uxn.ram[i] = j[0]; if(_2) uxn.ram[(i + 1) & m] = j[1];
+#define PEK(i,o,m) o[0] = ram[i]; if(_2) o[1] = ram[(i + 1) & m]; PUT(o)
+#define POK(i,j,m) ram[i] = j[0]; if(_2) ram[(i + 1) & m] = j[1];
 
 int
 uxn_eval(Uint16 pc)
 {
 	unsigned int a, b, c, x[2], y[2], z[2], step;
-	if(!pc || uxn.dev[0x0f]) return 0;
+	if(!pc || dev[0x0f]) return 0;
 	for(step = STEP_MAX; step; step--) {
-		switch(uxn.ram[pc++]) {
+		switch(ram[pc++]) {
 		/* BRK */ case 0x00: return 1;
 		/* JCI */ case 0x20: if(DEC(wst)) { JMI break; } pc += 2; break;
 		/* JMI */ case 0x40: JMI break;
 		/* JSI */ case 0x60: c = pc + 2; INC(rst) = c >> 8; INC(rst) = c; JMI break;
-		/* LI2 */ case 0xa0: INC(wst) = uxn.ram[pc++]; /* fall-through */
-		/* LIT */ case 0x80: INC(wst) = uxn.ram[pc++]; break;
-		/* L2r */ case 0xe0: INC(rst) = uxn.ram[pc++]; /* fall-through */
-		/* LIr */ case 0xc0: INC(rst) = uxn.ram[pc++]; break;
+		/* LI2 */ case 0xa0: INC(wst) = ram[pc++]; /* fall-through */
+		/* LIT */ case 0x80: INC(wst) = ram[pc++]; break;
+		/* L2r */ case 0xe0: INC(rst) = ram[pc++]; /* fall-through */
+		/* LIr */ case 0xc0: INC(rst) = ram[pc++]; break;
 		/* INC */ OPC(0x01,POx(a),PUx(a + 1))
 		/* POP */ OPC(0x02,REM   ,{})
 		/* NIP */ OPC(0x03,GET(x) REM   ,PUT(x))
@@ -162,13 +163,13 @@ system_print(char *name, Stack *s)
 }
 
 static int
-system_load(Uint8 *ram, char *rom_path)
+system_load(Uint8 *mem, char *rom_path)
 {
 	FILE *f = fopen(rom_path, "rb");
 	if(f) {
-		int i = 0, l = fread(ram, PAGE_SIZE - PAGE_PROGRAM, 1, f);
+		int i = 0, l = fread(mem, PAGE_SIZE - PAGE_PROGRAM, 1, f);
 		while(l && ++i < BANKS)
-			l = fread(ram + PAGE_SIZE * i - PAGE_PROGRAM, PAGE_SIZE, 1, f);
+			l = fread(mem + PAGE_SIZE * i - PAGE_PROGRAM, PAGE_SIZE, 1, f);
 		fclose(f);
 	}
 	return !!f;
@@ -182,12 +183,12 @@ system_error(char *msg, const char *err)
 }
 
 int
-system_boot(Uint8 *ram, char *rom_path, int has_args)
+system_boot(Uint8 *mem, char *rom_path, int has_args)
 {
-	uxn.ram = ram;
+	ram = mem;
 	boot_path = rom_path;
-	uxn.dev[0x17] = has_args;
-	if(ram && system_load(uxn.ram + PAGE_PROGRAM, rom_path))
+	dev[0x17] = has_args;
+	if(mem && system_load(ram + PAGE_PROGRAM, rom_path))
 		return uxn_eval(PAGE_PROGRAM);
 	return 0;
 }
@@ -196,41 +197,41 @@ int
 system_reboot(int soft)
 {
 	int i;
-	for(i = 0x0; i < 0x100; i++) uxn.dev[i] = 0;
-	for(i = soft ? 0x100 : 0; i < PAGE_SIZE; i++) uxn.ram[i] = 0;
+	for(i = 0x0; i < 0x100; i++) dev[i] = 0;
+	for(i = soft ? 0x100 : 0; i < PAGE_SIZE; i++) ram[i] = 0;
 	uxn.wst.ptr = uxn.rst.ptr = 0;
-	return system_boot(uxn.ram, boot_path, 0);
+	return system_boot(ram, boot_path, 0);
 }
 
 static void
 system_expansion(const Uint16 exp)
 {
-	Uint8 *aptr = uxn.ram + exp;
+	Uint8 *aptr = ram + exp;
 	unsigned short length = PEEK2(aptr + 1), limit;
 	unsigned int bank = PEEK2(aptr + 3) * 0x10000;
 	unsigned int addr = PEEK2(aptr + 5);
-	if(uxn.ram[exp] == 0x0) {
-		unsigned int dst_value = uxn.ram[exp + 7];
+	if(ram[exp] == 0x0) {
+		unsigned int dst_value = ram[exp + 7];
 		unsigned short a = addr;
 		if(bank < BANKS_CAP)
 			for(limit = a + length; a != limit; a++)
-				uxn.ram[bank + a] = dst_value;
-	} else if(uxn.ram[exp] == 0x1) {
+				ram[bank + a] = dst_value;
+	} else if(ram[exp] == 0x1) {
 		unsigned int dst_bank = PEEK2(aptr + 7) * 0x10000;
 		unsigned int dst_addr = PEEK2(aptr + 9);
 		unsigned short a = addr, c = dst_addr;
 		if(bank < BANKS_CAP && dst_bank < BANKS_CAP)
 			for(limit = a + length; a != limit; c++, a++)
-				uxn.ram[dst_bank + c] = uxn.ram[bank + a];
-	} else if(uxn.ram[exp] == 0x2) {
+				ram[dst_bank + c] = ram[bank + a];
+	} else if(ram[exp] == 0x2) {
 		unsigned int dst_bank = PEEK2(aptr + 7) * 0x10000;
 		unsigned int dst_addr = PEEK2(aptr + 9);
 		unsigned short a = addr + length - 1, c = dst_addr + length - 1;
 		if(bank < BANKS_CAP && dst_bank < BANKS_CAP)
 			for(limit = addr - 1; a != limit; a--, c--)
-				uxn.ram[dst_bank + c] = uxn.ram[bank + a];
+				ram[dst_bank + c] = ram[bank + a];
 	} else
-		fprintf(stderr, "Unknown command: %s\n", &uxn.ram[exp]);
+		fprintf(stderr, "Unknown command: %s\n", &ram[exp]);
 }
 
 char *
@@ -241,10 +242,10 @@ metadata_read_name(void)
 		metadata_buffer[i] = 0;
 	if(metadata_addr == 0)
 		return metadata_buffer;
-	if(uxn.ram[metadata_addr] != 0x00)
+	if(ram[metadata_addr] != 0x00)
 		return metadata_buffer;
 	for(i = 1; i < METADATA_LEN; i++) {
-		char c = uxn.ram[metadata_addr + i];
+		char c = ram[metadata_addr + i];
 		if(c == 0x00 || c == 0x0a)
 			break;
 		metadata_buffer[i - 1] = c;
@@ -260,7 +261,7 @@ system_dei(Uint8 addr)
 	switch(addr) {
 	case 0x4: return uxn.wst.ptr;
 	case 0x5: return uxn.rst.ptr;
-	default: return uxn.dev[addr];
+	default: return dev[addr];
 	}
 }
 
@@ -269,17 +270,17 @@ system_deo(Uint8 port)
 {
 	switch(port) {
 	case 0x3: {
-		system_expansion(PEEK2(uxn.dev + 2));
+		system_expansion(PEEK2(dev + 2));
 		break;
 	}
 	case 0x4:
-		uxn.wst.ptr = uxn.dev[4];
+		uxn.wst.ptr = dev[4];
 		break;
 	case 0x5:
-		uxn.rst.ptr = uxn.dev[5];
+		uxn.rst.ptr = dev[5];
 		break;
 	case 0x7:
-		metadata_addr = PEEK2(&uxn.dev[0x6]);
+		metadata_addr = PEEK2(&dev[0x6]);
 		break;
 	case 0xe:
 		system_print("WST", &uxn.wst);
@@ -302,7 +303,7 @@ int
 console_input(int c, int type)
 {
 	if(c == EOF) c = 0, type = 4;
-	uxn.dev[0x12] = c, uxn.dev[0x17] = type;
+	dev[0x12] = c, dev[0x17] = type;
 	uxn_eval(console_vector);
 	return type != 4;
 }
@@ -323,9 +324,9 @@ console_deo(Uint8 addr)
 {
 	FILE *fd;
 	switch(addr) {
-	case 0x11: console_vector = PEEK2(&uxn.dev[0x10]); return;
-	case 0x18: fd = stdout, fputc(uxn.dev[0x18], fd), fflush(fd); break;
-	case 0x19: fd = stderr, fputc(uxn.dev[0x19], fd), fflush(fd); break;
+	case 0x11: console_vector = PEEK2(&dev[0x10]); return;
+	case 0x18: fd = stdout, fputc(dev[0x18], fd), fflush(fd); break;
+	case 0x19: fd = stderr, fputc(dev[0x19], fd), fflush(fd); break;
 	}
 }
 
@@ -389,9 +390,9 @@ screen_palette(void)
 	unsigned long colors[4];
 	for(i = 0, shift = 4; i < 4; ++i, shift ^= 4) {
 		Uint8
-			r = (uxn.dev[0x8 + i / 2] >> shift) & 0xf,
-			g = (uxn.dev[0xa + i / 2] >> shift) & 0xf,
-			b = (uxn.dev[0xc + i / 2] >> shift) & 0xf;
+			r = (dev[0x8 + i / 2] >> shift) & 0xf,
+			g = (dev[0xa + i / 2] >> shift) & 0xf,
+			b = (dev[0xc + i / 2] >> shift) & 0xf;
 		colors[i] = 0x0f000000 | r << 16 | g << 8 | b;
 		colors[i] |= colors[i] << 4;
 	}
@@ -459,7 +460,7 @@ screen_dei(Uint8 addr)
 	case 0x2b: return rY;
 	case 0x2c: return rA >> 8;
 	case 0x2d: return rA;
-	default: return uxn.dev[addr];
+	default: return dev[addr];
 	}
 }
 
@@ -467,18 +468,18 @@ void
 screen_deo(Uint8 addr)
 {
 	switch(addr) {
-	case 0x21: uxn_screen.vector = PEEK2(&uxn.dev[0x20]); return;
-	case 0x23: screen_resize(PEEK2(&uxn.dev[0x22]), uxn_screen.height, uxn_screen.scale); return;
-	case 0x25: screen_resize(uxn_screen.width, PEEK2(&uxn.dev[0x24]), uxn_screen.scale); return;
-	case 0x26: rMX = uxn.dev[0x26] & 0x1, rMY = uxn.dev[0x26] & 0x2, rMA = uxn.dev[0x26] & 0x4, rML = uxn.dev[0x26] >> 4, rDX = rMX << 3, rDY = rMY << 2; return;
+	case 0x21: uxn_screen.vector = PEEK2(&dev[0x20]); return;
+	case 0x23: screen_resize(PEEK2(&dev[0x22]), uxn_screen.height, uxn_screen.scale); return;
+	case 0x25: screen_resize(uxn_screen.width, PEEK2(&dev[0x24]), uxn_screen.scale); return;
+	case 0x26: rMX = dev[0x26] & 0x1, rMY = dev[0x26] & 0x2, rMA = dev[0x26] & 0x4, rML = dev[0x26] >> 4, rDX = rMX << 3, rDY = rMY << 2; return;
 	case 0x28:
-	case 0x29: rX = (uxn.dev[0x28] << 8) | uxn.dev[0x29], rX = twos(rX); return;
+	case 0x29: rX = (dev[0x28] << 8) | dev[0x29], rX = twos(rX); return;
 	case 0x2a:
-	case 0x2b: rY = (uxn.dev[0x2a] << 8) | uxn.dev[0x2b], rY = twos(rY); return;
+	case 0x2b: rY = (dev[0x2a] << 8) | dev[0x2b], rY = twos(rY); return;
 	case 0x2c:
-	case 0x2d: rA = (uxn.dev[0x2c] << 8) | uxn.dev[0x2d]; return;
+	case 0x2d: rA = (dev[0x2c] << 8) | dev[0x2d]; return;
 	case 0x2e: {
-		int ctrl = uxn.dev[0x2e];
+		int ctrl = dev[0x2e];
 		int color = ctrl & 0x3;
 		int len = MAR2(uxn_screen.width);
 		Uint8 *layer = ctrl & 0x40 ? uxn_screen.fg : uxn_screen.bg;
@@ -511,7 +512,7 @@ screen_deo(Uint8 addr)
 		return;
 	}
 	case 0x2f: {
-		int ctrl = uxn.dev[0x2f];
+		int ctrl = dev[0x2f];
 		int blend = ctrl & 0xf, opaque = blend % 5;
 		int fx = ctrl & 0x10 ? -1 : 1, fy = ctrl & 0x20 ? -1 : 1;
 		int qfx = fx > 0 ? 7 : 0, qfy = fy < 0 ? 7 : 0;
@@ -526,7 +527,7 @@ screen_deo(Uint8 addr)
 				Uint16 xmar = MAR(x), ymar = MAR(y);
 				Uint16 xmar2 = MAR2(x), ymar2 = MAR2(y);
 				if(xmar < wmar && ymar2 < hmar2) {
-					Uint8 *sprite = &uxn.ram[rA];
+					Uint8 *sprite = &ram[rA];
 					int by = ymar2 * wmar2;
 					for(ay = ymar * wmar2, qy = qfy; ay < by; ay += wmar2, qy += fy) {
 						int ch1 = sprite[qy], ch2 = sprite[qy + 8] << 1, bx = xmar2 + ay;
@@ -543,7 +544,7 @@ screen_deo(Uint8 addr)
 				Uint16 xmar = MAR(x), ymar = MAR(y);
 				Uint16 xmar2 = MAR2(x), ymar2 = MAR2(y);
 				if(xmar < wmar && ymar2 < hmar2) {
-					Uint8 *sprite = &uxn.ram[rA];
+					Uint8 *sprite = &ram[rA];
 					int by = ymar2 * wmar2;
 					for(ay = ymar * wmar2, qy = qfy; ay < by; ay += wmar2, qy += fy) {
 						int ch1 = sprite[qy], bx = xmar2 + ay;
@@ -671,7 +672,7 @@ audio_start(int instance, Uint8 *d)
 	c->len = PEEK2(d + 0xa);
 	if(c->len > 0x10000 - addr)
 		c->len = 0x10000 - addr;
-	c->addr = &uxn.ram[addr];
+	c->addr = &ram[addr];
 	c->volume[0] = d[0xe] >> 4;
 	c->volume[1] = d[0xe] & 0xf;
 	c->repeat = !(d[0xf] & 0x80);
@@ -746,7 +747,7 @@ void
 controller_down(Uint8 mask)
 {
 	if(mask) {
-		uxn.dev[0x82] |= mask;
+		dev[0x82] |= mask;
 		uxn_eval(controller_vector);
 	}
 }
@@ -755,7 +756,7 @@ void
 controller_up(Uint8 mask)
 {
 	if(mask) {
-		uxn.dev[0x82] &= (~mask);
+		dev[0x82] &= (~mask);
 		uxn_eval(controller_vector);
 	}
 }
@@ -764,9 +765,9 @@ void
 controller_key(Uint8 key)
 {
 	if(key) {
-		uxn.dev[0x83] = key;
+		dev[0x83] = key;
 		uxn_eval(controller_vector);
-		uxn.dev[0x83] = 0;
+		dev[0x83] = 0;
 	}
 }
 
@@ -774,7 +775,7 @@ void
 controller_deo(Uint8 addr)
 {
 	switch(addr) {
-	case 0x81: controller_vector = PEEK2(&uxn.dev[0x80]); break;
+	case 0x81: controller_vector = PEEK2(&dev[0x80]); break;
 	}
 }
 
@@ -786,40 +787,40 @@ static unsigned int mouse_vector;
 void
 mouse_down(Uint8 mask)
 {
-	uxn.dev[0x96] |= mask;
+	dev[0x96] |= mask;
 	uxn_eval(mouse_vector);
 }
 
 void
 mouse_up(Uint8 mask)
 {
-	uxn.dev[0x96] &= (~mask);
+	dev[0x96] &= (~mask);
 	uxn_eval(mouse_vector);
 }
 
 void
 mouse_pos(Uint16 x, Uint16 y)
 {
-	uxn.dev[0x92] = x >> 8, uxn.dev[0x93] = x;
-	uxn.dev[0x94] = y >> 8, uxn.dev[0x95] = y;
+	dev[0x92] = x >> 8, dev[0x93] = x;
+	dev[0x94] = y >> 8, dev[0x95] = y;
 	uxn_eval(mouse_vector);
 }
 
 void
 mouse_scroll(Uint16 x, Uint16 y)
 {
-	uxn.dev[0x9a] = x >> 8, uxn.dev[0x9b] = x;
-	uxn.dev[0x9c] = -y >> 8, uxn.dev[0x9d] = -y;
+	dev[0x9a] = x >> 8, dev[0x9b] = x;
+	dev[0x9c] = -y >> 8, dev[0x9d] = -y;
 	uxn_eval(mouse_vector);
-	uxn.dev[0x9a] = 0, uxn.dev[0x9b] = 0;
-	uxn.dev[0x9c] = 0, uxn.dev[0x9d] = 0;
+	dev[0x9a] = 0, dev[0x9b] = 0;
+	dev[0x9c] = 0, dev[0x9d] = 0;
 }
 
 void
 mouse_deo(Uint8 addr)
 {
 	switch(addr) {
-	case 0x91: mouse_vector = PEEK2(&uxn.dev[0x90]); break;
+	case 0x91: mouse_vector = PEEK2(&dev[0x90]); break;
 	}
 }
 
@@ -1129,71 +1130,71 @@ file_deo(Uint8 port)
 	Uint16 addr, len, res;
 	switch(port) {
 	case 0xa5:
-		addr = PEEK2(&uxn.dev[0xa4]);
-		len = PEEK2(&uxn.dev[0xaa]);
+		addr = PEEK2(&dev[0xa4]);
+		len = PEEK2(&dev[0xaa]);
 		if(len > 0x10000 - addr)
 			len = 0x10000 - addr;
-		res = file_stat(&uxn_file[0], &uxn.ram[addr], len);
-		POKE2(&uxn.dev[0xa2], res);
+		res = file_stat(&uxn_file[0], &ram[addr], len);
+		POKE2(&dev[0xa2], res);
 		break;
 	case 0xa6:
 		res = file_delete(&uxn_file[0]);
-		POKE2(&uxn.dev[0xa2], res);
+		POKE2(&dev[0xa2], res);
 		break;
 	case 0xa9:
-		addr = PEEK2(&uxn.dev[0xa8]);
-		res = file_init(&uxn_file[0], (char *)&uxn.ram[addr], 0x10000 - addr, 0);
-		POKE2(&uxn.dev[0xa2], res);
+		addr = PEEK2(&dev[0xa8]);
+		res = file_init(&uxn_file[0], (char *)&ram[addr], 0x10000 - addr, 0);
+		POKE2(&dev[0xa2], res);
 		break;
 	case 0xad:
-		addr = PEEK2(&uxn.dev[0xac]);
-		len = PEEK2(&uxn.dev[0xaa]);
+		addr = PEEK2(&dev[0xac]);
+		len = PEEK2(&dev[0xaa]);
 		if(len > 0x10000 - addr)
 			len = 0x10000 - addr;
-		res = file_read(&uxn_file[0], &uxn.ram[addr], len);
-		POKE2(&uxn.dev[0xa2], res);
+		res = file_read(&uxn_file[0], &ram[addr], len);
+		POKE2(&dev[0xa2], res);
 		break;
 	case 0xaf:
-		addr = PEEK2(&uxn.dev[0xae]);
-		len = PEEK2(&uxn.dev[0xaa]);
+		addr = PEEK2(&dev[0xae]);
+		len = PEEK2(&dev[0xaa]);
 		if(len > 0x10000 - addr)
 			len = 0x10000 - addr;
-		res = file_write(&uxn_file[0], &uxn.ram[addr], len, uxn.dev[0xa7]);
-		POKE2(&uxn.dev[0xa2], res);
+		res = file_write(&uxn_file[0], &ram[addr], len, dev[0xa7]);
+		POKE2(&dev[0xa2], res);
 		break;
 	/* File 2 */
 	case 0xb5:
-		addr = PEEK2(&uxn.dev[0xb4]);
-		len = PEEK2(&uxn.dev[0xba]);
+		addr = PEEK2(&dev[0xb4]);
+		len = PEEK2(&dev[0xba]);
 		if(len > 0x10000 - addr)
 			len = 0x10000 - addr;
-		res = file_stat(&uxn_file[1], &uxn.ram[addr], len);
-		POKE2(&uxn.dev[0xb2], res);
+		res = file_stat(&uxn_file[1], &ram[addr], len);
+		POKE2(&dev[0xb2], res);
 		break;
 	case 0xb6:
 		res = file_delete(&uxn_file[1]);
-		POKE2(&uxn.dev[0xb2], res);
+		POKE2(&dev[0xb2], res);
 		break;
 	case 0xb9:
-		addr = PEEK2(&uxn.dev[0xb8]);
-		res = file_init(&uxn_file[1], (char *)&uxn.ram[addr], 0x10000 - addr, 0);
-		POKE2(&uxn.dev[0xb2], res);
+		addr = PEEK2(&dev[0xb8]);
+		res = file_init(&uxn_file[1], (char *)&ram[addr], 0x10000 - addr, 0);
+		POKE2(&dev[0xb2], res);
 		break;
 	case 0xbd:
-		addr = PEEK2(&uxn.dev[0xbc]);
-		len = PEEK2(&uxn.dev[0xba]);
+		addr = PEEK2(&dev[0xbc]);
+		len = PEEK2(&dev[0xba]);
 		if(len > 0x10000 - addr)
 			len = 0x10000 - addr;
-		res = file_read(&uxn_file[1], &uxn.ram[addr], len);
-		POKE2(&uxn.dev[0xb2], res);
+		res = file_read(&uxn_file[1], &ram[addr], len);
+		POKE2(&dev[0xb2], res);
 		break;
 	case 0xbf:
-		addr = PEEK2(&uxn.dev[0xbe]);
-		len = PEEK2(&uxn.dev[0xba]);
+		addr = PEEK2(&dev[0xbe]);
+		len = PEEK2(&dev[0xba]);
 		if(len > 0x10000 - addr)
 			len = 0x10000 - addr;
-		res = file_write(&uxn_file[1], &uxn.ram[addr], len, uxn.dev[0xb7]);
-		POKE2(&uxn.dev[0xb2], res);
+		res = file_write(&uxn_file[1], &ram[addr], len, dev[0xb7]);
+		POKE2(&dev[0xb2], res);
 		break;
 	}
 }
@@ -1223,7 +1224,7 @@ datetime_dei(Uint8 addr)
 	case 0xc8: return t->tm_yday >> 8;
 	case 0xc9: return t->tm_yday;
 	case 0xca: return t->tm_isdst;
-	default: return uxn.dev[addr];
+	default: return dev[addr];
 	}
 }
 
@@ -1237,20 +1238,20 @@ emu_dei(Uint8 addr)
 	switch(d) {
 	case 0x00: return system_dei(addr);
 	case 0x20: return screen_dei(addr);
-	case 0x30: return audio_dei(0, &uxn.dev[d], p);
-	case 0x40: return audio_dei(1, &uxn.dev[d], p);
-	case 0x50: return audio_dei(2, &uxn.dev[d], p);
-	case 0x60: return audio_dei(3, &uxn.dev[d], p);
+	case 0x30: return audio_dei(0, &dev[d], p);
+	case 0x40: return audio_dei(1, &dev[d], p);
+	case 0x50: return audio_dei(2, &dev[d], p);
+	case 0x60: return audio_dei(3, &dev[d], p);
 	case 0xc0: return datetime_dei(addr);
 	}
-	return uxn.dev[addr];
+	return dev[addr];
 }
 
 void
 emu_deo(Uint8 addr, Uint8 value)
 {
 	Uint8 p = addr & 0x0f, d = addr & 0xf0;
-	uxn.dev[addr] = value;
+	dev[addr] = value;
 	switch(d) {
 	case 0x00:
 		system_deo(addr);
@@ -1258,10 +1259,10 @@ emu_deo(Uint8 addr, Uint8 value)
 		break;
 	case 0x10: console_deo(addr); break;
 	case 0x20: screen_deo(addr); break;
-	case 0x30: audio_deo(0, &uxn.dev[d], p); break;
-	case 0x40: audio_deo(1, &uxn.dev[d], p); break;
-	case 0x50: audio_deo(2, &uxn.dev[d], p); break;
-	case 0x60: audio_deo(3, &uxn.dev[d], p); break;
+	case 0x30: audio_deo(0, &dev[d], p); break;
+	case 0x40: audio_deo(1, &dev[d], p); break;
+	case 0x50: audio_deo(2, &dev[d], p); break;
+	case 0x60: audio_deo(3, &dev[d], p); break;
 	case 0x80: controller_deo(addr); break;
 	case 0x90: mouse_deo(addr); break;
 	case 0xa0: file_deo(addr); break;
@@ -1475,7 +1476,7 @@ handle_events(void)
 			mouse_scroll(event.wheel.x, event.wheel.y);
 		/* Audio */
 		else if(event.type >= audio0_event && event.type < audio0_event + POLYPHONY) {
-			Uint8 *port_value = &uxn.dev[0x30 + 0x10 * (event.type - audio0_event)];
+			Uint8 *port_value = &dev[0x30 + 0x10 * (event.type - audio0_event)];
 			uxn_eval(port_value[0] << 8 | port_value[1]);
 		}
 		/* Controller */
@@ -1494,7 +1495,7 @@ handle_events(void)
 			else if(event.key.keysym.sym == SDLK_F2)
 				emu_deo(0xe, 0x1);
 			else if(event.key.keysym.sym == SDLK_F3)
-				uxn.dev[0x0f] = 0xff;
+				dev[0x0f] = 0xff;
 			else if(event.key.keysym.sym == SDLK_F4)
 				emu_restart(0);
 			else if(event.key.keysym.sym == SDLK_F5)
@@ -1568,7 +1569,7 @@ emu_run(void)
 	for(;;) {
 		Uint64 now = SDL_GetPerformanceCounter();
 		/* .System/halt */
-		if(uxn.dev[0x0f])
+		if(dev[0x0f])
 			return system_error("Run", "Ended.");
 		if(!handle_events())
 			return 0;
@@ -1624,5 +1625,5 @@ main(int argc, char **argv)
 	close(0); /* make stdin thread exit */
 #endif
 	SDL_Quit();
-	return uxn.dev[0x0f] & 0x7f;
+	return dev[0x0f] & 0x7f;
 }
