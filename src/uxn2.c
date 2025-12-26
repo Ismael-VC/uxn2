@@ -248,15 +248,13 @@ typedef struct UxnScreen {
 
 UxnScreen uxn_screen;
 
-void emu_redraw(void);
+void emu_resize(void), emu_redraw(void);
 
 static Uint8 blending[4][16] = {
 	{0, 0, 0, 0, 1, 0, 1, 1, 2, 2, 0, 2, 3, 3, 3, 0},
 	{0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3},
 	{1, 2, 3, 1, 1, 2, 3, 1, 1, 2, 3, 1, 1, 2, 3, 1},
 	{2, 3, 1, 2, 2, 3, 1, 2, 2, 3, 1, 2, 2, 3, 1, 2}};
-
-int emu_resize(int width, int height);
 
 static int
 screen_changed(void)
@@ -316,7 +314,7 @@ screen_resize(Uint16 width, Uint16 height)
 			uxn_screen.bg[i] = uxn_screen.fg[i] = 0;
 	}
 	screen_change(0, 0, width, height);
-	emu_resize(width, height);
+	emu_resize();
 }
 
 static void
@@ -1223,25 +1221,24 @@ set_borderless(int value)
 
 /* emulator primitives */
 
-int
-emu_resize(int width, int height)
+void
+emu_resize(void)
 {
 	if(!window_created)
-		return 0;
+		return;
 	if(emu_texture != NULL)
 		SDL_DestroyTexture(emu_texture);
-	SDL_RenderSetLogicalSize(emu_renderer, width, height);
-	emu_texture = SDL_CreateTexture(emu_renderer, SDL_PIXELFORMAT_RGB888, SDL_TEXTUREACCESS_STATIC, width, height);
+	SDL_RenderSetLogicalSize(emu_renderer, screen_width, screen_height);
+	emu_texture = SDL_CreateTexture(emu_renderer, SDL_PIXELFORMAT_RGB888, SDL_TEXTUREACCESS_STATIC, screen_width, screen_height);
 	if(emu_texture == NULL || SDL_SetTextureBlendMode(emu_texture, SDL_BLENDMODE_NONE))
-		return system_error("SDL_SetTextureBlendMode", SDL_GetError());
+		system_error("SDL_SetTextureBlendMode", SDL_GetError());
 	if(SDL_UpdateTexture(emu_texture, NULL, screen_pixels, sizeof(Uint32)) != 0)
-		return system_error("SDL_UpdateTexture", SDL_GetError());
+		system_error("SDL_UpdateTexture", SDL_GetError());
 	emu_viewport.x = 0;
 	emu_viewport.y = 0;
 	emu_viewport.w = screen_width;
 	emu_viewport.h = screen_height;
-	set_window_size(emu_window, width * zoom, height * zoom);
-	return 1;
+	set_window_size(emu_window, screen_width * zoom, screen_height * zoom);
 }
 
 void
@@ -1444,7 +1441,7 @@ emu_init(void)
 	emu_renderer = SDL_CreateRenderer(emu_window, -1, SDL_RENDERER_ACCELERATED);
 	if(emu_renderer == NULL)
 		return system_error("sdl_renderer", SDL_GetError());
-	emu_resize(screen_width, screen_height);
+	emu_resize();
 	return 1;
 }
 
