@@ -262,16 +262,17 @@ console_deo(Uint8 addr)
 
 static int screen_width, screen_height;
 static int screen_x1, screen_y1, screen_x2, screen_y2;
-static unsigned int screen_vector;
+static unsigned int screen_vector, *screen_pixels, screen_palette[16];
+
 static Uint32 stdin_event, audio0_event, zoom = 1;
 static int rX, rY, rA, rMX, rMY, rMA, rML, rDX, rDY;
 
+#define screen_zoom 1
 #define MAR(x) (x + 0x8)
 #define MAR2(x) (x + 0x10)
 
 typedef struct UxnScreen {
-	int vector, scale;
-	Uint32 palette[16], *pixels;
+	int scale;
 	Uint8 *fg, *bg;
 } UxnScreen;
 
@@ -308,7 +309,7 @@ screen_change(int x1, int y1, int x2, int y2)
 }
 
 static void
-screen_palette(void)
+screen_colorize(void)
 {
 	int i, shift;
 	unsigned long colors[4];
@@ -321,7 +322,7 @@ screen_palette(void)
 		colors[i] |= colors[i] << 4;
 	}
 	for(i = 0; i < 16; i++)
-		uxn_screen.palette[i] = colors[(i >> 2) ? (i >> 2) : (i & 3)];
+		screen_palette[i] = colors[(i >> 2) ? (i >> 2) : (i & 3)];
 	screen_change(0, 0, screen_width, screen_height);
 }
 
@@ -333,9 +334,9 @@ screen_resize(Uint16 width, Uint16 height, int scale)
 	CLAMP(height, 8, 0x800);
 	CLAMP(scale, 1, 3);
 	/* on rescale */
-	pixels = realloc(uxn_screen.pixels, width * height * sizeof(Uint32) * scale * scale);
+	pixels = realloc(screen_pixels, width * height * sizeof(Uint32) * scale * scale);
 	if(!pixels) return;
-	uxn_screen.pixels = pixels;
+	screen_pixels = pixels;
 	uxn_screen.scale = scale;
 	/* on resize */
 	if(screen_width != width || screen_height != height) {
@@ -358,11 +359,11 @@ screen_redraw(void)
 	for(y = screen_y1; y < screen_y2; y++) {
 		int ys = y * uxn_screen.scale;
 		for(x = screen_x1, i = MAR(x) + MAR(y) * MAR2(screen_width); x < screen_x2; x++, i++) {
-			int c = uxn_screen.palette[uxn_screen.fg[i] << 2 | uxn_screen.bg[i]];
+			int c = screen_palette[uxn_screen.fg[i] << 2 | uxn_screen.bg[i]];
 			for(k = 0; k < uxn_screen.scale; k++) {
 				int oo = ((ys + k) * screen_width + x) * uxn_screen.scale;
 				for(l = 0; l < uxn_screen.scale; l++)
-					uxn_screen.pixels[oo + l] = c;
+					screen_pixels[oo + l] = c;
 			}
 		}
 	}
@@ -1172,7 +1173,7 @@ emu_deo(Uint8 addr, Uint8 value)
 	switch(d) {
 	case 0x00:
 		system_deo(addr);
-		if(p > 0x7 && p < 0xe) screen_palette();
+		if(p > 0x7 && p < 0xe) screen_colorize();
 		break;
 	case 0x10: console_deo(addr); break;
 	case 0x20: screen_deo(addr); break;
@@ -1267,7 +1268,7 @@ emu_resize(int width, int height)
 	emu_texture = SDL_CreateTexture(emu_renderer, SDL_PIXELFORMAT_RGB888, SDL_TEXTUREACCESS_STATIC, width, height);
 	if(emu_texture == NULL || SDL_SetTextureBlendMode(emu_texture, SDL_BLENDMODE_NONE))
 		return system_error("SDL_SetTextureBlendMode", SDL_GetError());
-	if(SDL_UpdateTexture(emu_texture, NULL, uxn_screen.pixels, sizeof(Uint32)) != 0)
+	if(SDL_UpdateTexture(emu_texture, NULL, screen_pixels, sizeof(Uint32)) != 0)
 		return system_error("SDL_UpdateTexture", SDL_GetError());
 	emu_viewport.x = 0;
 	emu_viewport.y = 0;
@@ -1280,7 +1281,7 @@ emu_resize(int width, int height)
 void
 emu_redraw(void)
 {
-	if(SDL_UpdateTexture(emu_texture, NULL, uxn_screen.pixels, screen_width * sizeof(Uint32)) != 0)
+	if(SDL_UpdateTexture(emu_texture, NULL, screen_pixels, screen_width * sizeof(Uint32)) != 0)
 		system_error("SDL_UpdateTexture", SDL_GetError());
 	SDL_RenderClear(emu_renderer);
 	SDL_RenderCopy(emu_renderer, emu_texture, NULL, &emu_viewport);
