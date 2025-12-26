@@ -184,7 +184,7 @@ static void
 system_expansion(const Uint16 exp)
 {
 	Uint8 *aptr = ram + exp;
-	unsigned short length = PEEK2(aptr + 1), limit;
+	Uint16 length = PEEK2(aptr + 1), limit;
 	unsigned int bank = PEEK2(aptr + 3) * 0x10000;
 	unsigned int addr = PEEK2(aptr + 5);
 	if(ram[exp] == 0x0) {
@@ -196,14 +196,14 @@ system_expansion(const Uint16 exp)
 	} else if(ram[exp] == 0x1) {
 		unsigned int dst_bank = PEEK2(aptr + 7) * 0x10000;
 		unsigned int dst_addr = PEEK2(aptr + 9);
-		unsigned short a = addr, c = dst_addr;
+		Uint16 a = addr, c = dst_addr;
 		if(bank < BANKS_CAP && dst_bank < BANKS_CAP)
 			for(limit = a + length; a != limit; c++, a++)
 				ram[dst_bank + c] = ram[bank + a];
 	} else if(ram[exp] == 0x2) {
 		unsigned int dst_bank = PEEK2(aptr + 7) * 0x10000;
 		unsigned int dst_addr = PEEK2(aptr + 9);
-		unsigned short a = addr + length - 1, c = dst_addr + length - 1;
+		Uint16 a = addr + length - 1, c = dst_addr + length - 1;
 		if(bank < BANKS_CAP && dst_bank < BANKS_CAP)
 			for(limit = addr - 1; a != limit; a--, c--)
 				ram[dst_bank + c] = ram[bank + a];
