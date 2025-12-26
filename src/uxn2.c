@@ -634,14 +634,34 @@ audio_get_position(int instance)
 }
 
 static void
-audio_deo(int instance, Uint8 *d, Uint8 port)
+audio_deo(int instance, Uint8 addr, Uint8 value)
 {
-	if(!audio_id) return;
-	if(port == 0xf) {
+	dev[addr] = value;
+	switch(addr) {
+	case 0x3f:
 		SDL_LockAudioDevice(audio_id);
-		audio_start(instance, d);
+		audio_start(0, &dev[addr & 0xf0]);
 		SDL_UnlockAudioDevice(audio_id);
 		SDL_PauseAudioDevice(audio_id, 0);
+		break;
+	case 0x4f:
+		SDL_LockAudioDevice(audio_id);
+		audio_start(1, &dev[addr & 0xf0]);
+		SDL_UnlockAudioDevice(audio_id);
+		SDL_PauseAudioDevice(audio_id, 0);
+		break;
+	case 0x5f:
+		SDL_LockAudioDevice(audio_id);
+		audio_start(2, &dev[addr & 0xf0]);
+		SDL_UnlockAudioDevice(audio_id);
+		SDL_PauseAudioDevice(audio_id, 0);
+		break;
+	case 0x6f:
+		SDL_LockAudioDevice(audio_id);
+		audio_start(3, &dev[addr & 0xf0]);
+		SDL_UnlockAudioDevice(audio_id);
+		SDL_PauseAudioDevice(audio_id, 0);
+		break;
 	}
 }
 
@@ -1177,10 +1197,10 @@ emu_deo(Uint8 addr, Uint8 value)
 		break;
 	case 0x10: console_deo(addr); break;
 	case 0x20: screen_deo(addr); break;
-	case 0x30: audio_deo(0, &dev[d], p); break;
-	case 0x40: audio_deo(1, &dev[d], p); break;
-	case 0x50: audio_deo(2, &dev[d], p); break;
-	case 0x60: audio_deo(3, &dev[d], p); break;
+	case 0x30: audio_deo(0, addr, value); break;
+	case 0x40: audio_deo(1, addr, value); break;
+	case 0x50: audio_deo(2, addr, value); break;
+	case 0x60: audio_deo(3, addr, value); break;
 	case 0x80: controller_deo(addr); break;
 	case 0x90: mouse_deo(addr); break;
 	case 0xa0: file_deo(addr); break;
