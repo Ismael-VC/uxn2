@@ -1231,9 +1231,9 @@ emu_resize(void)
 	SDL_RenderSetLogicalSize(emu_renderer, screen_width, screen_height);
 	emu_texture = SDL_CreateTexture(emu_renderer, SDL_PIXELFORMAT_RGB888, SDL_TEXTUREACCESS_STATIC, screen_width, screen_height);
 	if(emu_texture == NULL || SDL_SetTextureBlendMode(emu_texture, SDL_BLENDMODE_NONE))
-		system_error("SDL_SetTextureBlendMode", SDL_GetError());
+		fprintf(stderr, "SDL_SetTextureBlendMode: %s\n", SDL_GetError());
 	if(SDL_UpdateTexture(emu_texture, NULL, screen_pixels, sizeof(Uint32)) != 0)
-		system_error("SDL_UpdateTexture", SDL_GetError());
+		fprintf(stderr, "SDL_UpdateTexture: %s\n", SDL_GetError());
 	emu_viewport.x = 0;
 	emu_viewport.y = 0;
 	emu_viewport.w = screen_width;
@@ -1245,7 +1245,7 @@ void
 emu_redraw(void)
 {
 	if(SDL_UpdateTexture(emu_texture, NULL, screen_pixels, screen_width * sizeof(Uint32)) != 0)
-		system_error("SDL_UpdateTexture", SDL_GetError());
+		fprintf(stderr, "SDL_UpdateTexture: %s\n", SDL_GetError());
 	SDL_RenderClear(emu_renderer);
 	SDL_RenderCopy(emu_renderer, emu_texture, NULL, &emu_viewport);
 	SDL_RenderPresent(emu_renderer);
@@ -1403,7 +1403,7 @@ emu_init_audio(void)
 	as.userdata = NULL;
 	audio_id = SDL_OpenAudioDevice(NULL, 0, &as, NULL, 0);
 	if(!audio_id)
-		system_error("sdl_audio", SDL_GetError());
+		fprintf(stderr, "sdl_audio: %s\n", SDL_GetError());
 	audio0_event = SDL_RegisterEvents(POLYPHONY);
 	SDL_PauseAudioDevice(audio_id, 1);
 }
@@ -1415,7 +1415,7 @@ emu_init(void)
 		return system_error("sdl", SDL_GetError());
 	emu_init_audio();
 	if(SDL_NumJoysticks() > 0 && SDL_JoystickOpen(0) == NULL)
-		system_error("sdl_joystick", SDL_GetError());
+		fprintf(stderr, "sdl_joystick: %s\n", SDL_GetError());
 	stdin_event = SDL_RegisterEvents(1);
 	SDL_DetachThread(stdin_thread = SDL_CreateThread(stdin_handler, "stdin", NULL));
 	SDL_StartTextInput();
