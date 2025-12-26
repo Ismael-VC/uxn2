@@ -35,22 +35,19 @@ clean:
 
 bin/uxn2: src/uxn2.c
 	mkdir -p bin
-	cc ${CC_flags} $(SDL_CFLAGS) ${RELEASE_flags} $(SDL_LIBS) src/uxn2.c -o bin/uxn2
+	cc ${CC_flags} $(SDL_CFLAGS) ${RELEASE_flags} src/uxn2.c -o bin/uxn2 $(SDL_LIBS)
 bin/uxn2-debug: src/uxn2.c
 	mkdir -p bin
-	cc ${CC_flags} $(SDL_CFLAGS) ${DEBUG_flags} $(SDL_LIBS) src/uxn2.c -o bin/uxn2-debug
+	cc ${CC_flags} $(SDL_CFLAGS) ${DEBUG_flags} src/uxn2.c -o bin/uxn2-debug $(SDL_LIBS)
 
 # Tools
 
-bin/uxnmin: etc/utils/uxnmin.c
-	mkdir -p bin
-	cc etc/utils/uxnmin.c -o bin/uxnmin
 bin/drifloon.rom: etc/utils/drifloon.rom.txt
 	xxd -r -p etc/utils/drifloon.rom.txt bin/drifloon.rom
 
 # Tests
 
-bin/opctest.rom: bin/uxnmin bin/drifloon.rom etc/tests/opctest.tal
-	cat etc/tests/opctest.tal | bin/uxnmin bin/drifloon.rom > bin/opctest.rom
-bin/perifs.rom: bin/uxnmin bin/drifloon.rom etc/tests/perifs.tal
-	cat etc/tests/perifs.tal | bin/uxnmin bin/drifloon.rom > bin/perifs.rom
+bin/opctest.rom: bin/uxn2 bin/drifloon.rom etc/tests/opctest.tal
+	cat etc/tests/opctest.tal | bin/uxn2 bin/drifloon.rom > bin/opctest.rom
+bin/perifs.rom: bin/uxn2 bin/drifloon.rom etc/tests/perifs.tal
+	cat etc/tests/perifs.tal | bin/uxn2 bin/drifloon.rom > bin/perifs.rom
