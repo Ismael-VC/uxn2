@@ -239,7 +239,6 @@ static int rX, rY, rA, rMX, rMY, rMA, rML, rDX, rDY;
 
 static Uint32 zoom = 1;
 
-#define screen_zoom 1
 #define MAR(x) (x + 0x8)
 #define MAR2(x) (x + 0x10)
 
@@ -1477,40 +1476,6 @@ emu_run(void)
 		} else
 			SDL_WaitEvent(NULL);
 	}
-}
-
-int
-main(int argc, char **argv)
-{
-	int i = 1;
-	char *rom_path;
-	/* flags */
-	if(argc > 1 && argv[i][0] == '-') {
-		if(!strcmp(argv[i], "-v"))
-			return system_error("Uxn(gui) - Varvara Emulator", "12 Jul 2025.");
-		else if(!strcmp(argv[i], "-2x"))
-			set_zoom(2, 0);
-		else if(!strcmp(argv[i], "-3x"))
-			set_zoom(3, 0);
-		else if(strcmp(argv[i], "-f") == 0)
-			set_fullscreen(1, 0);
-		i++;
-	}
-	/* init */
-	rom_path = i == argc ? "boot.rom" : argv[i++];
-	if(!emu_init())
-		return system_error("Init", "Failed to initialize varvara.");
-	if(!system_boot(rom_path, argc > i))
-		return system_error("usage:", "uxn2 [-v | -f | -2x | -3x] file.rom [args...]");
-	/* start */
-	uxn_eval(0x100);
-	for(; i < argc; i++) {
-		char *p = argv[i];
-		while(*p)
-			console_input(*p++, CONSOLE_ARG);
-		console_input('\n', i == argc - 1 ? CONSOLE_END : CONSOLE_EOA);
-	}
-	emu_run();
 	/* end */
 	SDL_CloseAudioDevice(audio_id);
 #ifdef _WIN32
@@ -1520,5 +1485,31 @@ main(int argc, char **argv)
 	close(0); /* make stdin thread exit */
 #endif
 	SDL_Quit();
+}
+
+int
+main(int argc, char **argv)
+{
+	int i = 1;
+	if(argc == 2 && argv[1][0] == '-' && argv[1][1] == 'v')
+		return !fprintf(stdout, "%s - Varvara Emulator, 26 Dec 2025.\n", argv[0]);
+	else if(argc == 1)
+		return !fprintf(stdout, "usage: %s [-v] file.rom [args..]\n", argv[0]);
+	else if(!system_boot(argv[i++], argc > 2))
+		return !fprintf(stdout, "Could not load %s.\n", argv[i - 1]);
+	screen_zoom = 1;
+	screen_resize(WIDTH, HEIGHT);
+	if(uxn_eval(0x100) && console_vector) {
+		for(; i < argc; i++) {
+			char *p = argv[i];
+			while(*p)
+				console_input(*p++, CONSOLE_ARG);
+			console_input('\n', i == argc - 1 ? CONSOLE_END : CONSOLE_EOA);
+		}
+	}
+	/* Run */
+	if(!emu_init())
+		return !fprintf(stdout, "Could not initialize %s.\n", argv[0]);
+	emu_run();
 	return dev[0x0f] & 0x7f;
 }
