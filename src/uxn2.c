@@ -29,10 +29,6 @@ cc --std=c99 -Wall -Wno-unknown-pragmas -DNDEBUG -O2 -g0 -s -L/usr/local/lib src
 #define WIDTH (64 * 8)
 #define HEIGHT (40 * 8)
 
-#define STEP_MAX 0x80000000
-#define PAGE_PROGRAM 0x0100
-#define PAGE_SIZE 0x10000
-
 /* clang-format off */
 
 #define CLAMP(v,a,b) { if(v < a) v = a; else if(v >= b) v = b; }
@@ -248,17 +244,6 @@ console_input(int c, unsigned int type)
 	dev[0x12] = c, dev[0x17] = type;
 	if(console_vector) uxn_eval(console_vector);
 	return type != 4;
-}
-
-static void
-console_arguments(int i, int argc, char **argv)
-{
-	for(; i < argc; i++) {
-		char *p = argv[i];
-		while(*p)
-			console_input(*p++, CONSOLE_ARG);
-		console_input('\n', i == argc - 1 ? CONSOLE_END : CONSOLE_EOA);
-	}
 }
 
 static void
@@ -1540,7 +1525,12 @@ main(int argc, char **argv)
 		return system_error("usage:", "uxn2 [-v | -f | -2x | -3x] file.rom [args...]");
 	/* start */
 	uxn_eval(0x100);
-	console_arguments(i, argc, argv);
+	for(; i < argc; i++) {
+		char *p = argv[i];
+		while(*p)
+			console_input(*p++, CONSOLE_ARG);
+		console_input('\n', i == argc - 1 ? CONSOLE_END : CONSOLE_EOA);
+	}
 	emu_run();
 	/* end */
 	SDL_CloseAudioDevice(audio_id);
