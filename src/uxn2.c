@@ -380,6 +380,101 @@ screen_update(void)
 }
 
 static void
+screen_draw_pixel(void)
+{
+	int ctrl = dev[0x2e];
+	int color = ctrl & 0x3;
+	int len = MAR2(screen_width);
+	Uint8 *layer = ctrl & 0x40 ? uxn_screen.fg : uxn_screen.bg;
+	/* fill mode */
+	if(ctrl & 0x80) {
+		int x1, y1, x2, y2, ax, bx, ay, by, hor, ver;
+		if(ctrl & 0x10)
+			x1 = 0, x2 = rX;
+		else
+			x1 = rX, x2 = screen_width;
+		if(ctrl & 0x20)
+			y1 = 0, y2 = rY;
+		else
+			y1 = rY, y2 = screen_height;
+		screen_change(x1, y1, x2, y2);
+		x1 = MAR(x1), y1 = MAR(y1);
+		hor = MAR(x2) - x1, ver = MAR(y2) - y1;
+		for(ay = y1 * len, by = ay + ver * len; ay < by; ay += len)
+			for(ax = ay + x1, bx = ax + hor; ax < bx; ax++)
+				layer[ax] = color;
+	}
+	/* pixel mode */
+	else {
+		if(rX >= 0 && rY >= 0 && rX < len && rY < screen_height)
+			layer[MAR(rX) + MAR(rY) * len] = color;
+		screen_change(rX, rY, rX + 1, rY + 1);
+		if(rMX) rX++;
+		if(rMY) rY++;
+	}
+}
+
+static void
+screen_draw_sprite(void)
+{
+	int ctrl = dev[0x2f];
+	int blend = ctrl & 0xf, opaque = blend % 5;
+	int fx = ctrl & 0x10 ? -1 : 1, fy = ctrl & 0x20 ? -1 : 1;
+	int qfx = fx > 0 ? 7 : 0, qfy = fy < 0 ? 7 : 0;
+	int dxy = fy * rDX, dyx = fx * rDY;
+	int wmar = MAR(screen_width), wmar2 = MAR2(screen_width);
+	int hmar2 = MAR2(screen_height);
+	int i, x1, x2, y1, y2, ax, ay, qx, qy, x = rX, y = rY;
+	Uint8 *layer = ctrl & 0x40 ? uxn_screen.fg : uxn_screen.bg;
+	if(ctrl & 0x80) {
+		int addr_incr = rMA << 2;
+		for(i = 0; i <= rML; i++, x += dyx, y += dxy, rA += addr_incr) {
+			Uint16 xmar = MAR(x), ymar = MAR(y);
+			Uint16 xmar2 = MAR2(x), ymar2 = MAR2(y);
+			if(xmar < wmar && ymar2 < hmar2) {
+				Uint8 *sprite = &ram[rA];
+				int by = ymar2 * wmar2;
+				for(ay = ymar * wmar2, qy = qfy; ay < by; ay += wmar2, qy += fy) {
+					int ch1 = sprite[qy], ch2 = sprite[qy + 8] << 1, bx = xmar2 + ay;
+					for(ax = xmar + ay, qx = qfx; ax < bx; ax++, qx -= fx) {
+						int color = ((ch1 >> qx) & 1) | ((ch2 >> qx) & 2);
+						if(opaque || color) layer[ax] = blending[color][blend];
+					}
+				}
+			}
+		}
+	} else {
+		int addr_incr = rMA << 1;
+		for(i = 0; i <= rML; i++, x += dyx, y += dxy, rA += addr_incr) {
+			Uint16 xmar = MAR(x), ymar = MAR(y);
+			Uint16 xmar2 = MAR2(x), ymar2 = MAR2(y);
+			if(xmar < wmar && ymar2 < hmar2) {
+				Uint8 *sprite = &ram[rA];
+				int by = ymar2 * wmar2;
+				for(ay = ymar * wmar2, qy = qfy; ay < by; ay += wmar2, qy += fy) {
+					int ch1 = sprite[qy], bx = xmar2 + ay;
+					for(ax = xmar + ay, qx = qfx; ax < bx; ax++, qx -= fx) {
+						int color = (ch1 >> qx) & 1;
+						if(opaque || color) layer[ax] = blending[color][blend];
+					}
+				}
+			}
+		}
+	}
+	if(fx < 0)
+		x1 = x, x2 = rX;
+	else
+		x1 = rX, x2 = x;
+	if(fy < 0)
+		y1 = y, y2 = rY;
+	else
+		y1 = rY, y2 = y;
+	screen_change(x1 - 8, y1 - 8, x2 + 8, y2 + 8);
+	if(rMX) rX += rDX * fx;
+	if(rMY) rY += rDY * fy;
+}
+
+static void
 screen_deo(Uint8 addr)
 {
 	switch(addr) {
@@ -393,97 +488,8 @@ screen_deo(Uint8 addr)
 	case 0x2b: rY = (dev[0x2a] << 8) | dev[0x2b], rY = TWOS(rY); return;
 	case 0x2c:
 	case 0x2d: rA = (dev[0x2c] << 8) | dev[0x2d]; return;
-	case 0x2e: {
-		int ctrl = dev[0x2e];
-		int color = ctrl & 0x3;
-		int len = MAR2(screen_width);
-		Uint8 *layer = ctrl & 0x40 ? uxn_screen.fg : uxn_screen.bg;
-		/* fill mode */
-		if(ctrl & 0x80) {
-			int x1, y1, x2, y2, ax, bx, ay, by, hor, ver;
-			if(ctrl & 0x10)
-				x1 = 0, x2 = rX;
-			else
-				x1 = rX, x2 = screen_width;
-			if(ctrl & 0x20)
-				y1 = 0, y2 = rY;
-			else
-				y1 = rY, y2 = screen_height;
-			screen_change(x1, y1, x2, y2);
-			x1 = MAR(x1), y1 = MAR(y1);
-			hor = MAR(x2) - x1, ver = MAR(y2) - y1;
-			for(ay = y1 * len, by = ay + ver * len; ay < by; ay += len)
-				for(ax = ay + x1, bx = ax + hor; ax < bx; ax++)
-					layer[ax] = color;
-		}
-		/* pixel mode */
-		else {
-			if(rX >= 0 && rY >= 0 && rX < len && rY < screen_height)
-				layer[MAR(rX) + MAR(rY) * len] = color;
-			screen_change(rX, rY, rX + 1, rY + 1);
-			if(rMX) rX++;
-			if(rMY) rY++;
-		}
-		return;
-	}
-	case 0x2f: {
-		int ctrl = dev[0x2f];
-		int blend = ctrl & 0xf, opaque = blend % 5;
-		int fx = ctrl & 0x10 ? -1 : 1, fy = ctrl & 0x20 ? -1 : 1;
-		int qfx = fx > 0 ? 7 : 0, qfy = fy < 0 ? 7 : 0;
-		int dxy = fy * rDX, dyx = fx * rDY;
-		int wmar = MAR(screen_width), wmar2 = MAR2(screen_width);
-		int hmar2 = MAR2(screen_height);
-		int i, x1, x2, y1, y2, ax, ay, qx, qy, x = rX, y = rY;
-		Uint8 *layer = ctrl & 0x40 ? uxn_screen.fg : uxn_screen.bg;
-		if(ctrl & 0x80) {
-			int addr_incr = rMA << 2;
-			for(i = 0; i <= rML; i++, x += dyx, y += dxy, rA += addr_incr) {
-				Uint16 xmar = MAR(x), ymar = MAR(y);
-				Uint16 xmar2 = MAR2(x), ymar2 = MAR2(y);
-				if(xmar < wmar && ymar2 < hmar2) {
-					Uint8 *sprite = &ram[rA];
-					int by = ymar2 * wmar2;
-					for(ay = ymar * wmar2, qy = qfy; ay < by; ay += wmar2, qy += fy) {
-						int ch1 = sprite[qy], ch2 = sprite[qy + 8] << 1, bx = xmar2 + ay;
-						for(ax = xmar + ay, qx = qfx; ax < bx; ax++, qx -= fx) {
-							int color = ((ch1 >> qx) & 1) | ((ch2 >> qx) & 2);
-							if(opaque || color) layer[ax] = blending[color][blend];
-						}
-					}
-				}
-			}
-		} else {
-			int addr_incr = rMA << 1;
-			for(i = 0; i <= rML; i++, x += dyx, y += dxy, rA += addr_incr) {
-				Uint16 xmar = MAR(x), ymar = MAR(y);
-				Uint16 xmar2 = MAR2(x), ymar2 = MAR2(y);
-				if(xmar < wmar && ymar2 < hmar2) {
-					Uint8 *sprite = &ram[rA];
-					int by = ymar2 * wmar2;
-					for(ay = ymar * wmar2, qy = qfy; ay < by; ay += wmar2, qy += fy) {
-						int ch1 = sprite[qy], bx = xmar2 + ay;
-						for(ax = xmar + ay, qx = qfx; ax < bx; ax++, qx -= fx) {
-							int color = (ch1 >> qx) & 1;
-							if(opaque || color) layer[ax] = blending[color][blend];
-						}
-					}
-				}
-			}
-		}
-		if(fx < 0)
-			x1 = x, x2 = rX;
-		else
-			x1 = rX, x2 = x;
-		if(fy < 0)
-			y1 = y, y2 = rY;
-		else
-			y1 = rY, y2 = y;
-		screen_change(x1 - 8, y1 - 8, x2 + 8, y2 + 8);
-		if(rMX) rX += rDX * fx;
-		if(rMY) rY += rDY * fy;
-		return;
-	}
+	case 0x2e: screen_draw_pixel(); return;
+	case 0x2f: screen_draw_sprite(); return;
 	}
 }
 
