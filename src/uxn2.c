@@ -11,7 +11,6 @@
 #pragma GCC diagnostic ignored "-Wpedantic"
 #pragma clang diagnostic ignored "-Wtypedef-redefinition"
 #include <SDL.h>
-#include "devices/audio.h"
 #if defined(_WIN32) && defined(_WIN32_WINNT) && _WIN32_WINNT > 0x0602
 #include <processthreadsapi.h>
 #elif defined(_WIN32)
@@ -239,29 +238,6 @@ console_deo(Uint8 addr)
 
 static int window_created, fullscreen, borderless;
 static Uint32 stdin_event, audio0_event, zoom = 1;
-
-static Uint8
-audio_dei(int instance, Uint8 *d, Uint8 port)
-{
-	if(!audio_id) return d[port];
-	switch(port) {
-	case 0x4: return audio_get_vu(instance);
-	case 0x2: POKE2(d + 0x2, audio_get_position(instance)); /* fall through */
-	default: return d[port];
-	}
-}
-
-static void
-audio_deo(int instance, Uint8 *d, Uint8 port)
-{
-	if(!audio_id) return;
-	if(port == 0xf) {
-		SDL_LockAudioDevice(audio_id);
-		audio_start(instance, d);
-		SDL_UnlockAudioDevice(audio_id);
-		SDL_PauseAudioDevice(audio_id, 0);
-	}
-}
 
 /*
 @|Screen ------------------------------------------------------------ */
@@ -504,6 +480,176 @@ screen_deo(Uint8 addr)
 		if(rMY) rY += rDY * fy;
 		return;
 	}
+	}
+}
+
+/*
+@|Audio ------------------------------------------------------------- */
+
+typedef signed int Sint32;
+
+#define SAMPLE_FREQUENCY 44100
+#define POLYPHONY 4
+
+Uint8 audio_get_vu(int instance);
+Uint16 audio_get_position(int instance);
+
+
+#define NOTE_PERIOD (SAMPLE_FREQUENCY * 0x4000 / 11025)
+#define ADSR_STEP (SAMPLE_FREQUENCY / 0xf)
+
+typedef struct {
+	Uint8 *addr;
+	Uint32 count, advance, period, age, a, d, s, r;
+	Uint16 i, len;
+	Sint8 volume[2];
+	Uint8 pitch, repeat;
+} UxnAudio;
+
+/* clang-format off */
+
+static Uint32 advances[12] = {
+	0x80000, 0x879c8, 0x8facd, 0x9837f, 0xa1451, 0xaadc1,
+	0xb504f, 0xbfc88, 0xcb2ff, 0xd7450, 0xe411f, 0xf1a1c
+};
+
+static UxnAudio uxn_audio[POLYPHONY];
+
+/* clang-format on */
+
+int audio_render(int instance, Sint16 *sample, Sint16 *end);
+
+static void
+audio_callback(void *u, Uint8 *stream, int len)
+{
+	int instance, running = 0;
+	Sint16 *samples = (Sint16 *)stream;
+	USED(u);
+	SDL_memset(stream, 0, len);
+	for(instance = 0; instance < POLYPHONY; instance++)
+		running += audio_render(instance, samples, samples + len / 2);
+	if(!running)
+		SDL_PauseAudioDevice(audio_id, 1);
+}
+
+void
+audio_finished_handler(int instance)
+{
+	SDL_Event event;
+	event.type = audio0_event + instance;
+	SDL_PushEvent(&event);
+}
+
+static Sint32
+envelope(UxnAudio *c, Uint32 age)
+{
+	if(!c->r) return 0x0888;
+	if(age < c->a) return 0x0888 * age / c->a;
+	if(age < c->d) return 0x0444 * (2 * c->d - c->a - age) / (c->d - c->a);
+	if(age < c->s) return 0x0444;
+	if(age < c->r) return 0x0444 * (c->r - age) / (c->r - c->s);
+	c->advance = 0;
+	return 0x0000;
+}
+
+int
+audio_render(int instance, Sint16 *sample, Sint16 *end)
+{
+	UxnAudio *c = &uxn_audio[instance];
+	Sint32 s;
+	if(!c->advance || !c->period) return 0;
+	while(sample < end) {
+		c->count += c->advance;
+		c->i += c->count / c->period;
+		c->count %= c->period;
+		if(c->i >= c->len) {
+			if(!c->repeat) {
+				c->advance = 0;
+				break;
+			}
+			c->i %= c->len;
+		}
+		s = (Sint8)(c->addr[c->i] + 0x80) * envelope(c, c->age++);
+		*sample++ += s * c->volume[0] / 0x180;
+		*sample++ += s * c->volume[1] / 0x180;
+	}
+	if(!c->advance) audio_finished_handler(instance);
+	return 1;
+}
+
+void
+audio_start(int instance, Uint8 *d)
+{
+	UxnAudio *c = &uxn_audio[instance];
+	Uint8 pitch = d[0xf] & 0x7f;
+	Uint16 addr = PEEK2(d + 0xc);
+	Uint16 adsr = PEEK2(d + 0x8);
+	c->len = PEEK2(d + 0xa);
+	if(c->len > 0x10000 - addr)
+		c->len = 0x10000 - addr;
+	c->addr = &uxn.ram[addr];
+	c->volume[0] = d[0xe] >> 4;
+	c->volume[1] = d[0xe] & 0xf;
+	c->repeat = !(d[0xf] & 0x80);
+	if(pitch < 108 && c->len)
+		c->advance = advances[pitch % 12] >> (8 - pitch / 12);
+	else {
+		c->advance = 0;
+		return;
+	}
+	c->a = ADSR_STEP * (adsr >> 12);
+	c->d = ADSR_STEP * (adsr >> 8 & 0xf) + c->a;
+	c->s = ADSR_STEP * (adsr >> 4 & 0xf) + c->d;
+	c->r = ADSR_STEP * (adsr >> 0 & 0xf) + c->s;
+	c->age = 0;
+	c->i = 0;
+	if(c->len <= 0x100) /* single cycle mode */
+		c->period = NOTE_PERIOD * 337 / 2 / c->len;
+	else /* sample repeat mode */
+		c->period = NOTE_PERIOD;
+}
+
+Uint8
+audio_get_vu(int instance)
+{
+	int i;
+	UxnAudio *c = &uxn_audio[instance];
+	Sint32 sum[2] = {0, 0};
+	if(!c->advance || !c->period) return 0;
+	for(i = 0; i < 2; i++) {
+		if(!c->volume[i]) continue;
+		sum[i] = 1 + envelope(c, c->age) * c->volume[i] / 0x800;
+		if(sum[i] > 0xf) sum[i] = 0xf;
+	}
+	return (sum[0] << 4) | sum[1];
+}
+
+Uint16
+audio_get_position(int instance)
+{
+	return uxn_audio[instance].i;
+}
+
+static Uint8
+audio_dei(int instance, Uint8 *d, Uint8 port)
+{
+	if(!audio_id) return d[port];
+	switch(port) {
+	case 0x4: return audio_get_vu(instance);
+	case 0x2: POKE2(d + 0x2, audio_get_position(instance)); /* fall through */
+	default: return d[port];
+	}
+}
+
+static void
+audio_deo(int instance, Uint8 *d, Uint8 port)
+{
+	if(!audio_id) return;
+	if(port == 0xf) {
+		SDL_LockAudioDevice(audio_id);
+		audio_start(instance, d);
+		SDL_UnlockAudioDevice(audio_id);
+		SDL_PauseAudioDevice(audio_id, 0);
 	}
 }
 
@@ -1055,27 +1201,6 @@ emu_deo(Uint8 addr, Uint8 value)
 }
 
 /* Handlers */
-
-static void
-audio_callback(void *u, Uint8 *stream, int len)
-{
-	int instance, running = 0;
-	Sint16 *samples = (Sint16 *)stream;
-	USED(u);
-	SDL_memset(stream, 0, len);
-	for(instance = 0; instance < POLYPHONY; instance++)
-		running += audio_render(instance, samples, samples + len / 2);
-	if(!running)
-		SDL_PauseAudioDevice(audio_id, 1);
-}
-
-void
-audio_finished_handler(int instance)
-{
-	SDL_Event event;
-	event.type = audio0_event + instance;
-	SDL_PushEvent(&event);
-}
 
 static int
 stdin_handler(void *p)
