@@ -231,19 +231,19 @@ console_input(int c, unsigned int type)
 /*
 @|Screen ------------------------------------------------------------ */
 
-static int screen_width, screen_height;
-static int screen_x1, screen_y1, screen_x2, screen_y2;
+static Uint8 *screen_layers;
+static int screen_width, screen_height, screen_zoom;
+static int screen_x1, screen_y1, screen_x2, screen_y2, screen_reqsize, screen_reqdraw;
 static unsigned int screen_vector, *screen_pixels, screen_palette[16];
-
-static Uint32 audio0_event, zoom = 1;
 static int rX, rY, rA, rMX, rMY, rMA, rML, rDX, rDY;
+
+static Uint32 zoom = 1;
 
 #define screen_zoom 1
 #define MAR(x) (x + 0x8)
 #define MAR2(x) (x + 0x10)
 
 typedef struct UxnScreen {
-	int scale;
 	Uint8 *fg, *bg;
 } UxnScreen;
 
@@ -303,9 +303,7 @@ screen_resize(Uint16 width, Uint16 height)
 	Uint32 *pixels;
 	CLAMP(width, 8, 0x800);
 	CLAMP(height, 8, 0x800);
-	CLAMP(uxn_screen.scale, 1, 3);
-	/* on rescale */
-	pixels = realloc(screen_pixels, width * height * sizeof(Uint32) * uxn_screen.scale * uxn_screen.scale);
+	pixels = realloc(screen_pixels, width * height * sizeof(Uint32));
 	if(!pixels) return;
 	screen_pixels = pixels;
 	/* on resize */
@@ -327,12 +325,12 @@ screen_redraw(void)
 {
 	int i, x, y, k, l;
 	for(y = screen_y1; y < screen_y2; y++) {
-		int ys = y * uxn_screen.scale;
+		int ys = y;
 		for(x = screen_x1, i = MAR(x) + MAR(y) * MAR2(screen_width); x < screen_x2; x++, i++) {
 			int c = screen_palette[uxn_screen.fg[i] << 2 | uxn_screen.bg[i]];
-			for(k = 0; k < uxn_screen.scale; k++) {
-				int oo = ((ys + k) * screen_width + x) * uxn_screen.scale;
-				for(l = 0; l < uxn_screen.scale; l++)
+			for(k = 0; k < 1; k++) {
+				int oo = ((ys + k) * screen_width + x);
+				for(l = 0; l < 1; l++)
 					screen_pixels[oo + l] = c;
 			}
 		}
@@ -477,6 +475,7 @@ static UxnAudio uxn_audio[POLYPHONY];
 
 /* clang-format on */
 
+static Uint32 audio0_event;
 int audio_render(int instance, Sint16 *sample, Sint16 *end);
 
 static void
