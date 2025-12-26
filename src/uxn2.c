@@ -127,7 +127,6 @@ step:
 
 /* clang-format on */
 
-
 /*
 @|System ------------------------------------------------------------ */
 
@@ -148,14 +147,14 @@ system_print(char *name, int r)
 	fprintf(stderr, "<%02x\n", ptr[r]);
 }
 
-static int
-system_load(Uint8 *mem, char *rom_path)
+static unsigned int
+system_load(const char *rom_path)
 {
 	FILE *f = fopen(rom_path, "rb");
 	if(f) {
-		int i = 0, l = fread(mem, PAGE_SIZE - PAGE_PROGRAM, 1, f);
+		unsigned int i = 0, l = fread(ram + 0x100, 0x10000 - 0x100, 1, f);
 		while(l && ++i < BANKS)
-			l = fread(mem + PAGE_SIZE * i - PAGE_PROGRAM, PAGE_SIZE, 1, f);
+			l = fread(ram + i * 0x10000, 0x10000, 1, f);
 		fclose(f);
 	}
 	return !!f;
@@ -174,7 +173,7 @@ system_boot(Uint8 *mem, char *rom_path, int has_args)
 	ram = mem;
 	boot_path = rom_path;
 	dev[0x17] = has_args;
-	if(mem && system_load(ram + PAGE_PROGRAM, rom_path))
+	if(mem && system_load(rom_path))
 		return uxn_eval(PAGE_PROGRAM);
 	return 0;
 }
