@@ -1252,11 +1252,9 @@ emu_redraw(void)
 }
 
 static void
-emu_restart(int soft)
+emu_restart(unsigned int soft)
 {
-	screen_resize(WIDTH, HEIGHT);
-	system_reboot(soft);
-	SDL_SetWindowTitle(emu_window, "Varvara");
+	screen_resize(WIDTH, HEIGHT), system_reboot(soft), uxn_eval(0x100);
 }
 
 static Uint8
@@ -1445,7 +1443,7 @@ emu_init(void)
 	return 1;
 }
 
-static int
+static void
 emu_run(void)
 {
 	Uint64 next_refresh = 0;
@@ -1453,12 +1451,10 @@ emu_run(void)
 	Uint64 frame_interval = perf_freq / 60;
 	Uint64 ms_interval = perf_freq / 1000;
 	/* game loop */
-	for(;;) {
+	for(;!dev[0x0f];) {
 		Uint64 now = SDL_GetPerformanceCounter();
-		if(dev[0x0f])
-			return system_error("Run", "Ended.");
 		if(!emu_event())
-			return 0;
+			return;
 		if(now >= next_refresh) {
 			next_refresh = now + frame_interval;
 			screen_update();
