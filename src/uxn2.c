@@ -327,17 +327,16 @@ screen_colorize(void)
 }
 
 static void
-screen_resize(Uint16 width, Uint16 height, int scale)
+screen_resize(Uint16 width, Uint16 height)
 {
 	Uint32 *pixels;
 	CLAMP(width, 8, 0x800);
 	CLAMP(height, 8, 0x800);
-	CLAMP(scale, 1, 3);
+	CLAMP(uxn_screen.scale, 1, 3);
 	/* on rescale */
-	pixels = realloc(screen_pixels, width * height * sizeof(Uint32) * scale * scale);
+	pixels = realloc(screen_pixels, width * height * sizeof(Uint32) * uxn_screen.scale * uxn_screen.scale);
 	if(!pixels) return;
 	screen_pixels = pixels;
-	uxn_screen.scale = scale;
 	/* on resize */
 	if(screen_width != width || screen_height != height) {
 		int i, length = MAR2(width) * MAR2(height);
@@ -385,8 +384,8 @@ screen_deo(Uint8 addr)
 {
 	switch(addr) {
 	case 0x21: screen_vector = PEEK2(&dev[0x20]); return;
-	case 0x23: screen_resize(PEEK2(&dev[0x22]), screen_height, uxn_screen.scale); return;
-	case 0x25: screen_resize(screen_width, PEEK2(&dev[0x24]), uxn_screen.scale); return;
+	case 0x23: screen_resize(PEEK2(&dev[0x22]) & 0xfff, screen_height & 0xfff); return;
+	case 0x25: screen_resize(screen_width & 0xfff, PEEK2(&dev[0x24]) & 0xfff); return;
 	case 0x26: rMX = dev[0x26] & 0x1, rMY = dev[0x26] & 0x2, rMA = dev[0x26] & 0x4, rML = dev[0x26] >> 4, rDX = rMX << 3, rDY = rMY << 2; return;
 	case 0x28:
 	case 0x29: rX = (dev[0x28] << 8) | dev[0x29], rX = TWOS(rX); return;
@@ -1244,7 +1243,7 @@ set_window_size(SDL_Window *window, int w, int h)
 	if(w == win_old.x && h == win_old.y) return;
 	SDL_RenderClear(emu_renderer);
 	SDL_SetWindowSize(window, w, h);
-	screen_resize(screen_width, screen_height, 1);
+	screen_resize(screen_width, screen_height);
 }
 
 static void
@@ -1340,14 +1339,14 @@ emu_init(void)
 	SDL_ShowCursor(SDL_DISABLE);
 	SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
 	SDL_SetRenderDrawColor(emu_renderer, 0x00, 0x00, 0x00, 0xff);
-	screen_resize(WIDTH, HEIGHT, 1);
+	screen_resize(WIDTH, HEIGHT);
 	return 1;
 }
 
 static void
 emu_restart(int soft)
 {
-	screen_resize(WIDTH, HEIGHT, uxn_screen.scale);
+	screen_resize(WIDTH, HEIGHT);
 	system_reboot(soft);
 	SDL_SetWindowTitle(emu_window, "Varvara");
 }
