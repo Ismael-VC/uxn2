@@ -20,30 +20,25 @@ copyright notice and this permission notice appear in all copies.
 
 THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
 WITH REGARD TO THIS SOFTWARE.
+
+cc --std=c99 -Wall -Wno-unknown-pragmas -DNDEBUG -O2 -g0 -s -L/usr/local/lib src/uxn2.c -o bin/uxn2
 */
 
 #define BANKS 0x10
 #define BANKS_CAP BANKS * 0x10000
-#define WIDTH 64 * 8
-#define HEIGHT 40 * 8
+#define WIDTH (64 * 8)
+#define HEIGHT (40 * 8)
+
 #define STEP_MAX 0x80000000
 #define PAGE_PROGRAM 0x0100
 #define PAGE_SIZE 0x10000
 
-static SDL_Window *emu_window;
-static SDL_Texture *emu_texture;
-static SDL_Renderer *emu_renderer;
-static SDL_Rect emu_viewport;
-static SDL_AudioDeviceID audio_id;
-static SDL_Thread *stdin_thread;
-
 /* clang-format off */
 
+#define CLAMP(v,a,b) { if(v < a) v = a; else if(v >= b) v = b; }
+#define TWOS(v) (v & 0x8000 ? (int)v - 0x10000 : (int)v)
 #define PEEK2(d) (*(d) << 8 | (d)[1])
 #define POKE2(d, v) { *(d) = (v) >> 8; (d)[1] = (v); }
-#define clamp(v,a,b) { if(v < a) v = a; else if(v >= b) v = b; }
-#define twos(v) (v & 0x8000 ? (int)v - 0x10000 : (int)v)
-
 #define NEXT if(--cycles) goto step; else return 0;
 
 #define OPC(opc, A, B) {\
@@ -341,10 +336,10 @@ int emu_resize(int width, int height);
 int
 screen_changed(void)
 {
-	clamp(uxn_screen.x1, 0, uxn_screen.width);
-	clamp(uxn_screen.y1, 0, uxn_screen.height);
-	clamp(uxn_screen.x2, 0, uxn_screen.width);
-	clamp(uxn_screen.y2, 0, uxn_screen.height);
+	CLAMP(uxn_screen.x1, 0, uxn_screen.width);
+	CLAMP(uxn_screen.y1, 0, uxn_screen.height);
+	CLAMP(uxn_screen.x2, 0, uxn_screen.width);
+	CLAMP(uxn_screen.y2, 0, uxn_screen.height);
 	return uxn_screen.x2 > uxn_screen.x1 &&
 		uxn_screen.y2 > uxn_screen.y1;
 }
@@ -380,9 +375,9 @@ void
 screen_resize(Uint16 width, Uint16 height, int scale)
 {
 	Uint32 *pixels;
-	clamp(width, 8, 0x800);
-	clamp(height, 8, 0x800);
-	clamp(scale, 1, 3);
+	CLAMP(width, 8, 0x800);
+	CLAMP(height, 8, 0x800);
+	CLAMP(scale, 1, 3);
 	/* on rescale */
 	pixels = realloc(uxn_screen.pixels, width * height * sizeof(Uint32) * scale * scale);
 	if(!pixels) return;
@@ -448,9 +443,9 @@ screen_deo(Uint8 addr)
 	case 0x25: screen_resize(uxn_screen.width, PEEK2(&dev[0x24]), uxn_screen.scale); return;
 	case 0x26: rMX = dev[0x26] & 0x1, rMY = dev[0x26] & 0x2, rMA = dev[0x26] & 0x4, rML = dev[0x26] >> 4, rDX = rMX << 3, rDY = rMY << 2; return;
 	case 0x28:
-	case 0x29: rX = (dev[0x28] << 8) | dev[0x29], rX = twos(rX); return;
+	case 0x29: rX = (dev[0x28] << 8) | dev[0x29], rX = TWOS(rX); return;
 	case 0x2a:
-	case 0x2b: rY = (dev[0x2a] << 8) | dev[0x2b], rY = twos(rY); return;
+	case 0x2b: rY = (dev[0x2a] << 8) | dev[0x2b], rY = TWOS(rY); return;
 	case 0x2c:
 	case 0x2d: rA = (dev[0x2c] << 8) | dev[0x2d]; return;
 	case 0x2e: {
@@ -554,6 +549,8 @@ screen_deo(Uint8 addr)
 #define POLYPHONY 4
 #define NOTE_PERIOD (SAMPLE_FREQUENCY * 0x4000 / 11025)
 #define ADSR_STEP (SAMPLE_FREQUENCY / 0xf)
+
+static SDL_AudioDeviceID audio_id;
 
 Uint8 audio_get_vu(int instance);
 Uint16 audio_get_position(int instance);
@@ -1246,6 +1243,12 @@ emu_deo(Uint8 addr, Uint8 value)
 }
 
 /* Handlers */
+
+static SDL_Window *emu_window;
+static SDL_Texture *emu_texture;
+static SDL_Renderer *emu_renderer;
+static SDL_Rect emu_viewport;
+static SDL_Thread *stdin_thread;
 
 static int
 stdin_handler(void *p)
