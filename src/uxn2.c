@@ -212,20 +212,20 @@ system_error(char *msg, const char *err)
 /*
 @|Console ----------------------------------------------------------- */
 
-static int console_vector;
-
 #define CONSOLE_STD 0x1
 #define CONSOLE_ARG 0x2
 #define CONSOLE_EOA 0x3
 #define CONSOLE_END 0x4
 
+static int console_vector;
+
 static unsigned int
 console_input(int c, unsigned int type)
 {
-	if(c == EOF) c = 0, type = 4;
+	if(c == EOF) c = 0, type = CONSOLE_END;
 	dev[0x12] = c, dev[0x17] = type;
 	if(console_vector) uxn_eval(console_vector);
-	return type != 4;
+	return type != CONSOLE_END;
 }
 
 /*
@@ -235,7 +235,7 @@ static int screen_width, screen_height;
 static int screen_x1, screen_y1, screen_x2, screen_y2;
 static unsigned int screen_vector, *screen_pixels, screen_palette[16];
 
-static Uint32 stdin_event, audio0_event, zoom = 1;
+static Uint32 audio0_event, zoom = 1;
 static int rX, rY, rA, rMX, rMY, rMA, rML, rDX, rDY;
 
 #define screen_zoom 1
@@ -1163,6 +1163,7 @@ static SDL_Texture *emu_texture;
 static SDL_Renderer *emu_renderer;
 static SDL_Rect emu_viewport;
 static SDL_Thread *stdin_thread;
+static Uint32 stdin_event;
 
 static int
 stdin_handler(void *p)
