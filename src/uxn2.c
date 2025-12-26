@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <time.h>
+#include <string.h>
 #include <unistd.h>
 
 #include "uxn.h"
@@ -9,7 +10,6 @@
 #pragma GCC diagnostic ignored "-Wpedantic"
 #pragma clang diagnostic ignored "-Wtypedef-redefinition"
 #include <SDL.h>
-#include "devices/system.h"
 #include "devices/console.h"
 #include "devices/screen.h"
 #include "devices/audio.h"
@@ -18,7 +18,6 @@
 #include <processthreadsapi.h>
 #elif defined(_WIN32)
 #include <windows.h>
-#include <string.h>
 #endif
 #ifndef __plan9__
 #define USED(x) (void)(x)
@@ -37,6 +36,8 @@ THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
 WITH REGARD TO THIS SOFTWARE.
 */
 
+#define BANKS 0x10
+#define BANKS_CAP BANKS * 0x10000
 #define WIDTH 64 * 8
 #define HEIGHT 40 * 8
 
@@ -51,6 +52,153 @@ static SDL_AudioDeviceID audio_id;
 static SDL_Thread *stdin_thread;
 
 /* devices */
+
+/*
+@|System ------------------------------------------------------------ */
+
+char *boot_path;
+Uint16 metadata_addr;
+
+#define METADATA_LEN 256
+/* allocate one more to ensure a null terminator */
+char metadata_buffer[METADATA_LEN + 1];
+
+static void
+system_print(char *name, Stack *s)
+{
+	Uint8 i;
+	fprintf(stderr, "%s ", name);
+	for(i = s->ptr - 8; i != (Uint8)(s->ptr); i++)
+		fprintf(stderr, "%02x%c", s->dat[i], i == 0xff ? '|' : ' ');
+	fprintf(stderr, "<%02x\n", s->ptr);
+}
+
+static int
+system_load(Uint8 *ram, char *rom_path)
+{
+	FILE *f = fopen(rom_path, "rb");
+	if(f) {
+		int i = 0, l = fread(ram, PAGE_SIZE - PAGE_PROGRAM, 1, f);
+		while(l && ++i < BANKS)
+			l = fread(ram + PAGE_SIZE * i - PAGE_PROGRAM, PAGE_SIZE, 1, f);
+		fclose(f);
+	}
+	return !!f;
+}
+
+int
+system_error(char *msg, const char *err)
+{
+	fprintf(stderr, "%s: %s\n", msg, err), fflush(stderr);
+	return 0;
+}
+
+int
+system_boot(Uint8 *ram, char *rom_path, int has_args)
+{
+	uxn.ram = ram;
+	boot_path = rom_path;
+	uxn.dev[0x17] = has_args;
+	if(ram && system_load(uxn.ram + PAGE_PROGRAM, rom_path))
+		return uxn_eval(PAGE_PROGRAM);
+	return 0;
+}
+
+int
+system_reboot(int soft)
+{
+	int i;
+	for(i = 0x0; i < 0x100; i++) uxn.dev[i] = 0;
+	for(i = soft ? 0x100 : 0; i < PAGE_SIZE; i++) uxn.ram[i] = 0;
+	uxn.wst.ptr = uxn.rst.ptr = 0;
+	return system_boot(uxn.ram, boot_path, 0);
+}
+
+static void
+system_expansion(const Uint16 exp)
+{
+	Uint8 *aptr = uxn.ram + exp;
+	unsigned short length = PEEK2(aptr + 1), limit;
+	unsigned int bank = PEEK2(aptr + 3) * 0x10000;
+	unsigned int addr = PEEK2(aptr + 5);
+	if(uxn.ram[exp] == 0x0) {
+		unsigned int dst_value = uxn.ram[exp + 7];
+		unsigned short a = addr;
+		if(bank < BANKS_CAP)
+			for(limit = a + length; a != limit; a++)
+				uxn.ram[bank + a] = dst_value;
+	} else if(uxn.ram[exp] == 0x1) {
+		unsigned int dst_bank = PEEK2(aptr + 7) * 0x10000;
+		unsigned int dst_addr = PEEK2(aptr + 9);
+		unsigned short a = addr, c = dst_addr;
+		if(bank < BANKS_CAP && dst_bank < BANKS_CAP)
+			for(limit = a + length; a != limit; c++, a++)
+				uxn.ram[dst_bank + c] = uxn.ram[bank + a];
+	} else if(uxn.ram[exp] == 0x2) {
+		unsigned int dst_bank = PEEK2(aptr + 7) * 0x10000;
+		unsigned int dst_addr = PEEK2(aptr + 9);
+		unsigned short a = addr + length - 1, c = dst_addr + length - 1;
+		if(bank < BANKS_CAP && dst_bank < BANKS_CAP)
+			for(limit = addr - 1; a != limit; a--, c--)
+				uxn.ram[dst_bank + c] = uxn.ram[bank + a];
+	} else
+		fprintf(stderr, "Unknown command: %s\n", &uxn.ram[exp]);
+}
+
+char *
+metadata_read_name(void)
+{
+	int i;
+	for(i = 0; i < METADATA_LEN + 1; i++)
+		metadata_buffer[i] = 0;
+	if(metadata_addr == 0)
+		return metadata_buffer;
+	if(uxn.ram[metadata_addr] != 0x00)
+		return metadata_buffer;
+	for(i = 1; i < METADATA_LEN; i++) {
+		char c = uxn.ram[metadata_addr + i];
+		if(c == 0x00 || c == 0x0a)
+			break;
+		metadata_buffer[i - 1] = c;
+	}
+	return metadata_buffer;
+}
+
+/* IO */
+
+Uint8
+system_dei(Uint8 addr)
+{
+	switch(addr) {
+	case 0x4: return uxn.wst.ptr;
+	case 0x5: return uxn.rst.ptr;
+	default: return uxn.dev[addr];
+	}
+}
+
+void
+system_deo(Uint8 port)
+{
+	switch(port) {
+	case 0x3: {
+		system_expansion(PEEK2(uxn.dev + 2));
+		break;
+	}
+	case 0x4:
+		uxn.wst.ptr = uxn.dev[4];
+		break;
+	case 0x5:
+		uxn.rst.ptr = uxn.dev[5];
+		break;
+	case 0x7:
+		metadata_addr = PEEK2(&uxn.dev[0x6]);
+		break;
+	case 0xe:
+		system_print("WST", &uxn.wst);
+		system_print("RST", &uxn.rst);
+		break;
+	}
+}
 
 static int window_created, fullscreen, borderless;
 static Uint32 stdin_event, audio0_event, zoom = 1;
