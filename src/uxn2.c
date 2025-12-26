@@ -202,13 +202,6 @@ system_expansion(const Uint16 exp)
 		fprintf(stderr, "Unknown command: %s\n", &ram[exp]);
 }
 
-static int
-system_error(char *msg, const char *err)
-{
-	fprintf(stderr, "%s: %s\n", msg, err), fflush(stderr);
-	return 0;
-}
-
 /*
 @|Console ----------------------------------------------------------- */
 
@@ -1370,7 +1363,6 @@ emu_event(void)
 		else if(event.type == SDL_JOYBUTTONUP)
 			controller_up(get_button_joystick(&event));
 		else if(event.type == SDL_JOYHATMOTION) {
-			/* NOTE: Assuming there is only one joyhat in the controller */
 			switch(event.jhat.value) {
 			case SDL_HAT_UP: controller_down(0x10); break;
 			case SDL_HAT_DOWN: controller_down(0x20); break;
@@ -1412,7 +1404,7 @@ static int
 emu_init(void)
 {
 	if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK) < 0)
-		return system_error("sdl", SDL_GetError());
+		return !fprintf(stderr, "sdl: %s\n", SDL_GetError());
 	emu_init_audio();
 	if(SDL_NumJoysticks() > 0 && SDL_JoystickOpen(0) == NULL)
 		fprintf(stderr, "sdl_joystick: %s\n", SDL_GetError());
@@ -1433,10 +1425,10 @@ emu_init(void)
 		screen_height * emu_zoom,
 		window_flags);
 	if(emu_window == NULL)
-		return system_error("sdl_window", SDL_GetError());
+		return !fprintf(stderr, "sdl_window: %s\n", SDL_GetError());
 	emu_renderer = SDL_CreateRenderer(emu_window, -1, SDL_RENDERER_ACCELERATED);
 	if(emu_renderer == NULL)
-		return system_error("sdl_renderer", SDL_GetError());
+		return fprintf(stderr, "sdl_renderer: %s\n", SDL_GetError());
 	return 1;
 }
 
