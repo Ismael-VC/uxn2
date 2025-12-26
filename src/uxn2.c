@@ -127,12 +127,7 @@ step:
 /*
 @|System ------------------------------------------------------------ */
 
-char *boot_path;
-Uint16 metadata_addr;
-
-#define METADATA_LEN 256
-/* allocate one more to ensure a null terminator */
-char metadata_buffer[METADATA_LEN + 1];
+static char *boot_path;
 
 static void
 system_print(char *name, int r)
@@ -157,14 +152,14 @@ system_load(const char *rom_path)
 	return !!f;
 }
 
-int
+static int
 system_error(char *msg, const char *err)
 {
 	fprintf(stderr, "%s: %s\n", msg, err), fflush(stderr);
 	return 0;
 }
 
-int
+static int
 system_boot(Uint8 *mem, char *rom_path, int has_args)
 {
 	ram = mem;
@@ -175,7 +170,7 @@ system_boot(Uint8 *mem, char *rom_path, int has_args)
 	return 0;
 }
 
-int
+static int
 system_reboot(int soft)
 {
 	int i;
@@ -216,28 +211,9 @@ system_expansion(const Uint16 exp)
 		fprintf(stderr, "Unknown command: %s\n", &ram[exp]);
 }
 
-char *
-metadata_read_name(void)
-{
-	int i;
-	for(i = 0; i < METADATA_LEN + 1; i++)
-		metadata_buffer[i] = 0;
-	if(metadata_addr == 0)
-		return metadata_buffer;
-	if(ram[metadata_addr] != 0x00)
-		return metadata_buffer;
-	for(i = 1; i < METADATA_LEN; i++) {
-		char c = ram[metadata_addr + i];
-		if(c == 0x00 || c == 0x0a)
-			break;
-		metadata_buffer[i - 1] = c;
-	}
-	return metadata_buffer;
-}
-
 /* IO */
 
-Uint8
+static Uint8
 system_dei(Uint8 addr)
 {
 	switch(addr) {
@@ -247,7 +223,7 @@ system_dei(Uint8 addr)
 	}
 }
 
-void
+static void
 system_deo(Uint8 port)
 {
 	switch(port) {
@@ -257,9 +233,6 @@ system_deo(Uint8 port)
 	}
 	case 0x04: ptr[0] = dev[4]; return;
 	case 0x05: ptr[1] = dev[5]; return;
-	case 0x7:
-		metadata_addr = PEEK2(&dev[0x6]);
-		break;
 	case 0xe:
 		system_print("WST", 0), system_print("RST", 1);
 		return;
@@ -269,7 +242,7 @@ system_deo(Uint8 port)
 /*
 @|Console ----------------------------------------------------------- */
 
-int console_vector;
+static int console_vector;
 
 #define CONSOLE_STD 0x1
 #define CONSOLE_ARG 0x2
@@ -285,7 +258,7 @@ console_input(int c, unsigned int type)
 	return type != 4;
 }
 
-void
+static void
 console_arguments(int i, int argc, char **argv)
 {
 	for(; i < argc; i++) {
@@ -296,7 +269,7 @@ console_arguments(int i, int argc, char **argv)
 	}
 }
 
-void
+static void
 console_deo(Uint8 addr)
 {
 	FILE *fd;
@@ -333,7 +306,7 @@ static Uint8 blending[4][16] = {
 
 int emu_resize(int width, int height);
 
-int
+static int
 screen_changed(void)
 {
 	CLAMP(uxn_screen.x1, 0, uxn_screen.width);
@@ -353,7 +326,7 @@ screen_change(int x1, int y1, int x2, int y2)
 	if(y2 > uxn_screen.y2) uxn_screen.y2 = y2;
 }
 
-void
+static void
 screen_palette(void)
 {
 	int i, shift;
@@ -371,7 +344,7 @@ screen_palette(void)
 	screen_change(0, 0, uxn_screen.width, uxn_screen.height);
 }
 
-void
+static void
 screen_resize(Uint16 width, Uint16 height, int scale)
 {
 	Uint32 *pixels;
@@ -397,7 +370,7 @@ screen_resize(Uint16 width, Uint16 height, int scale)
 	emu_resize(width, height);
 }
 
-void
+static void
 screen_redraw(void)
 {
 	int i, x, y, k, l;
@@ -416,7 +389,7 @@ screen_redraw(void)
 	uxn_screen.x2 = uxn_screen.y2 = 0;
 }
 
-Uint8
+static Uint8
 screen_dei(Uint8 addr)
 {
 	switch(addr) {
@@ -434,7 +407,7 @@ screen_dei(Uint8 addr)
 	}
 }
 
-void
+static void
 screen_deo(Uint8 addr)
 {
 	switch(addr) {
@@ -589,7 +562,7 @@ audio_callback(void *u, Uint8 *stream, int len)
 		SDL_PauseAudioDevice(audio_id, 1);
 }
 
-void
+static void
 audio_finished_handler(int instance)
 {
 	SDL_Event event;
@@ -634,7 +607,7 @@ audio_render(int instance, Sint16 *sample, Sint16 *end)
 	return 1;
 }
 
-void
+static void
 audio_start(int instance, Uint8 *d)
 {
 	UxnAudio *c = &uxn_audio[instance];
@@ -743,7 +716,7 @@ controller_key(Uint8 key)
 	}
 }
 
-void
+static void
 controller_deo(Uint8 addr)
 {
 	switch(addr) {
@@ -788,7 +761,7 @@ mouse_scroll(Uint16 x, Uint16 y)
 	dev[0x9c] = 0, dev[0x9d] = 0;
 }
 
-void
+static void
 mouse_deo(Uint8 addr)
 {
 	switch(addr) {
@@ -1008,14 +981,14 @@ is_dir_path(char *p)
 	return saw_slash;
 }
 
-int
+static int
 dir_exists(char *p)
 {
 	struct stat st;
 	return stat(p, &st) == 0 && S_ISDIR(st.st_mode);
 }
 
-int
+static int
 ensure_parent_dirs(char *p)
 {
 	int ok = 1;
@@ -1096,7 +1069,7 @@ file_delete(UxnFile *c)
 	return c->outside_sandbox ? 0 : unlink(c->current_filename);
 }
 
-void
+static void
 file_deo(Uint8 port)
 {
 	Uint16 addr, len, res;
@@ -1176,7 +1149,7 @@ file_deo(Uint8 port)
 
 #include <time.h>
 
-Uint8
+static Uint8
 datetime_dei(Uint8 addr)
 {
 	time_t seconds = time(NULL);
@@ -1526,11 +1499,10 @@ emu_run(void)
 	Uint64 frame_interval = perf_freq / 60;
 	Uint64 ms_interval = perf_freq / 1000;
 	Uint32 window_flags = SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI;
-	char *rom_name = metadata_read_name();
 	window_created = 0;
 	if(fullscreen)
 		window_flags = window_flags | SDL_WINDOW_FULLSCREEN_DESKTOP;
-	emu_window = SDL_CreateWindow(rom_name,
+	emu_window = SDL_CreateWindow("Uxn2",
 		SDL_WINDOWPOS_UNDEFINED,
 		SDL_WINDOWPOS_UNDEFINED,
 		uxn_screen.width * zoom,
