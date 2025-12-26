@@ -1302,7 +1302,7 @@ static int
 emu_event(void)
 {
 	SDL_Event event;
-	while(SDL_PollEvent(&event)) {
+	while(SDL_PollEvent(&event) && !dev[0x0f]) {
 		/* Window */
 		if(event.type == SDL_QUIT)
 			return 0;
