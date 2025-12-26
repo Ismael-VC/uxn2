@@ -7,7 +7,7 @@ A graphical emulator for the [Varvara Computer](https://wiki.xxiivv.com/site/var
 You must have [SDL2](https://www.libsdl.org/) installed.
 
 ```sh
-cc -Wall -Wno-unknown-pragmas -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT -DNDEBUG -O2 -g0 -s -L/usr/local/lib -L/usr/lib -lSDL2 src/uxn2.c -o bin/uxn2
+cc -I/usr/include/SDL2 -DNDEBUG -O2 -g0 -s -lSDL2 src/uxn2.c -o bin/uxn2
 ```
 
 For your convenience a [Makefile](https://en.wikipedia.org/wiki/Make_(software)#Makefile) is provided. 
