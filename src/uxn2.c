@@ -232,15 +232,16 @@ console_input(int c, unsigned int type)
 @|Screen ------------------------------------------------------------ */
 
 static int emu_zoom = 1;
-
-#define MAR(x) (x + 0x8)
-#define MAR2(x) (x + 0x10)
+#define screen_zoom 1
 
 static Uint8 *screen_layers;
-static int screen_width, screen_height, screen_zoom;
+static int screen_width, screen_height;
 static int screen_x1, screen_y1, screen_x2, screen_y2, screen_reqsize, screen_reqdraw;
 static unsigned int screen_vector, *screen_pixels, screen_palette[16];
 static int rX, rY, rA, rMX, rMY, rMA, rML, rDX, rDY;
+
+#define MAR(x) (x + 0x8)
+#define MAR2(x) (x + 0x10)
 
 void emu_redraw(void), emu_resize(void);
 
@@ -1163,7 +1164,7 @@ emu_deo(Uint8 addr, Uint8 value)
 
 /* Handlers */
 
-static int window_created, fullscreen, borderless;
+static int fullscreen, borderless;
 static SDL_Window *emu_window;
 static SDL_Texture *emu_texture;
 static SDL_Renderer *emu_renderer;
@@ -1202,15 +1203,6 @@ set_window_size(SDL_Window *window, int w, int h)
 }
 
 static void
-set_zoom(Uint8 z, int win)
-{
-	if(z < 1) return;
-	if(win)
-		set_window_size(emu_window, screen_width * z, screen_height * z);
-	emu_zoom = z;
-}
-
-static void
 set_fullscreen(int value, int win)
 {
 	Uint32 flags = 0; /* windowed mode; SDL2 has no constant for this */
@@ -1234,8 +1226,6 @@ set_borderless(int value)
 void
 emu_resize(void)
 {
-	if(!window_created)
-		return;
 	if(emu_texture != NULL)
 		SDL_DestroyTexture(emu_texture);
 	SDL_RenderSetLogicalSize(emu_renderer, screen_width, screen_height);
@@ -1324,7 +1314,7 @@ emu_event(void)
 		if(event.type == SDL_QUIT)
 			return 0;
 		else if(event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_EXPOSED)
-			emu_redraw();
+			screen_reqdraw = 1;
 		/* Mouse */
 		else if(event.type == SDL_MOUSEMOTION)
 			mouse_pos(event.motion.x, event.motion.y);
@@ -1351,7 +1341,7 @@ emu_event(void)
 			else if(get_button(&event))
 				controller_down(get_button(&event));
 			else if(event.key.keysym.sym == SDLK_F1)
-				set_zoom(emu_zoom == 3 ? 1 : emu_zoom + 1, 1);
+				emu_zoom = (emu_zoom % 3) + 1, screen_reqsize = screen_reqdraw = 1;
 			else if(event.key.keysym.sym == SDLK_F2)
 				emu_deo(0xe, 0x1);
 			else if(event.key.keysym.sym == SDLK_F3)
@@ -1434,7 +1424,6 @@ emu_init(void)
 	SDL_SetRenderDrawColor(emu_renderer, 0x00, 0x00, 0x00, 0xff);
 	/* Window */
 	Uint32 window_flags = SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI;
-	window_created = 0;
 	if(fullscreen)
 		window_flags = window_flags | SDL_WINDOW_FULLSCREEN_DESKTOP;
 	emu_window = SDL_CreateWindow("Uxn2",
@@ -1445,7 +1434,6 @@ emu_init(void)
 		window_flags);
 	if(emu_window == NULL)
 		return system_error("sdl_window", SDL_GetError());
-	window_created = 1;
 	emu_renderer = SDL_CreateRenderer(emu_window, -1, SDL_RENDERER_ACCELERATED);
 	if(emu_renderer == NULL)
 		return system_error("sdl_renderer", SDL_GetError());
@@ -1498,7 +1486,6 @@ main(int argc, char **argv)
 		return !fprintf(stdout, "usage: %s [-v] file.rom [args..]\n", argv[0]);
 	else if(!system_boot(argv[i++], argc > 2))
 		return !fprintf(stdout, "Could not load %s.\n", argv[i - 1]);
-	screen_zoom = 1;
 	screen_resize(WIDTH, HEIGHT);
 	if(uxn_eval(0x100) && console_vector) {
 		for(; i < argc; i++) {
