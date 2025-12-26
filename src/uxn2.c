@@ -1255,42 +1255,6 @@ emu_redraw(void)
 }
 
 static void
-emu_init_audio(void)
-{
-	SDL_AudioSpec as;
-	SDL_zero(as);
-	as.freq = SAMPLE_FREQUENCY;
-	as.format = AUDIO_S16SYS;
-	as.channels = 2;
-	as.callback = audio_callback;
-	as.samples = 512;
-	as.userdata = NULL;
-	audio_id = SDL_OpenAudioDevice(NULL, 0, &as, NULL, 0);
-	if(!audio_id)
-		system_error("sdl_audio", SDL_GetError());
-	audio0_event = SDL_RegisterEvents(POLYPHONY);
-	SDL_PauseAudioDevice(audio_id, 1);
-}
-
-static int
-emu_init(void)
-{
-	if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK) < 0)
-		return system_error("sdl", SDL_GetError());
-	emu_init_audio();
-	if(SDL_NumJoysticks() > 0 && SDL_JoystickOpen(0) == NULL)
-		system_error("sdl_joystick", SDL_GetError());
-	stdin_event = SDL_RegisterEvents(1);
-	SDL_DetachThread(stdin_thread = SDL_CreateThread(stdin_handler, "stdin", NULL));
-	SDL_StartTextInput();
-	SDL_ShowCursor(SDL_DISABLE);
-	SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
-	SDL_SetRenderDrawColor(emu_renderer, 0x00, 0x00, 0x00, 0xff);
-	screen_resize(WIDTH, HEIGHT);
-	return 1;
-}
-
-static void
 emu_restart(int soft)
 {
 	screen_resize(WIDTH, HEIGHT);
@@ -1347,7 +1311,7 @@ get_key(SDL_Event *event)
 }
 
 static int
-handle_events(void)
+emu_event(void)
 {
 	SDL_Event event;
 	while(SDL_PollEvent(&event)) {
@@ -1431,13 +1395,39 @@ handle_events(void)
 	return 1;
 }
 
-static int
-emu_run(void)
+static void
+emu_init_audio(void)
 {
-	Uint64 next_refresh = 0;
-	Uint64 perf_freq = SDL_GetPerformanceFrequency();
-	Uint64 frame_interval = perf_freq / 60;
-	Uint64 ms_interval = perf_freq / 1000;
+	SDL_AudioSpec as;
+	SDL_zero(as);
+	as.freq = SAMPLE_FREQUENCY;
+	as.format = AUDIO_S16SYS;
+	as.channels = 2;
+	as.callback = audio_callback;
+	as.samples = 512;
+	as.userdata = NULL;
+	audio_id = SDL_OpenAudioDevice(NULL, 0, &as, NULL, 0);
+	if(!audio_id)
+		system_error("sdl_audio", SDL_GetError());
+	audio0_event = SDL_RegisterEvents(POLYPHONY);
+	SDL_PauseAudioDevice(audio_id, 1);
+}
+
+static int
+emu_init(void)
+{
+	if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK) < 0)
+		return system_error("sdl", SDL_GetError());
+	emu_init_audio();
+	if(SDL_NumJoysticks() > 0 && SDL_JoystickOpen(0) == NULL)
+		system_error("sdl_joystick", SDL_GetError());
+	stdin_event = SDL_RegisterEvents(1);
+	SDL_DetachThread(stdin_thread = SDL_CreateThread(stdin_handler, "stdin", NULL));
+	SDL_StartTextInput();
+	SDL_ShowCursor(SDL_DISABLE);
+	SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
+	SDL_SetRenderDrawColor(emu_renderer, 0x00, 0x00, 0x00, 0xff);
+	/* Window */
 	Uint32 window_flags = SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI;
 	window_created = 0;
 	if(fullscreen)
@@ -1455,13 +1445,22 @@ emu_run(void)
 	if(emu_renderer == NULL)
 		return system_error("sdl_renderer", SDL_GetError());
 	emu_resize(screen_width, screen_height);
+	return 1;
+}
+
+static int
+emu_run(void)
+{
+	Uint64 next_refresh = 0;
+	Uint64 perf_freq = SDL_GetPerformanceFrequency();
+	Uint64 frame_interval = perf_freq / 60;
+	Uint64 ms_interval = perf_freq / 1000;
 	/* game loop */
 	for(;;) {
 		Uint64 now = SDL_GetPerformanceCounter();
-		/* .System/halt */
 		if(dev[0x0f])
 			return system_error("Run", "Ended.");
-		if(!handle_events())
+		if(!emu_event())
 			return 0;
 		if(now >= next_refresh) {
 			next_refresh = now + frame_interval;
