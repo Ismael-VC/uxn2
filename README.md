@@ -39,11 +39,16 @@ bin/uxn2 bin/example.rom arg1 arg2
 The file device is _sandboxed_, meaning that it should not be able to read or write outside of the working directory.
 
 - `00` system
-- `10` console(+)
+- `10` console
 - `20` screen
+- `40` audio
+- `50` audio
+- `60` audio
+- `70` audio
 - `80` controller
 - `90` mouse
-- `a0` file
+- `a0` file(a)
+- `b0` file(b)
 - `c0` datetime
 
 ## Emulator Controls
