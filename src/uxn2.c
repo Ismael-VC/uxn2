@@ -209,24 +209,6 @@ system_error(char *msg, const char *err)
 	return 0;
 }
 
-/* IO */
-
-static void
-system_deo(Uint8 port)
-{
-	switch(port) {
-	case 0x3: {
-		system_expansion(PEEK2(dev + 2));
-		break;
-	}
-	case 0x04: ptr[0] = dev[4]; return;
-	case 0x05: ptr[1] = dev[5]; return;
-	case 0xe:
-		system_print("WST", 0), system_print("RST", 1);
-		return;
-	}
-}
-
 /*
 @|Console ----------------------------------------------------------- */
 
@@ -244,17 +226,6 @@ console_input(int c, unsigned int type)
 	dev[0x12] = c, dev[0x17] = type;
 	if(console_vector) uxn_eval(console_vector);
 	return type != 4;
-}
-
-static void
-console_deo(Uint8 addr)
-{
-	FILE *fd;
-	switch(addr) {
-	case 0x11: console_vector = PEEK2(&dev[0x10]); return;
-	case 0x18: fd = stdout, fputc(dev[0x18], fd), fflush(fd); break;
-	case 0x19: fd = stderr, fputc(dev[0x19], fd), fflush(fd); break;
-	}
 }
 
 /*
@@ -474,25 +445,6 @@ screen_draw_sprite(void)
 	if(rMY) rY += rDY * fy;
 }
 
-static void
-screen_deo(Uint8 addr)
-{
-	switch(addr) {
-	case 0x21: screen_vector = PEEK2(&dev[0x20]); return;
-	case 0x23: screen_resize(PEEK2(&dev[0x22]) & 0xfff, screen_height & 0xfff); return;
-	case 0x25: screen_resize(screen_width & 0xfff, PEEK2(&dev[0x24]) & 0xfff); return;
-	case 0x26: rMX = dev[0x26] & 0x1, rMY = dev[0x26] & 0x2, rMA = dev[0x26] & 0x4, rML = dev[0x26] >> 4, rDX = rMX << 3, rDY = rMY << 2; return;
-	case 0x28:
-	case 0x29: rX = (dev[0x28] << 8) | dev[0x29], rX = TWOS(rX); return;
-	case 0x2a:
-	case 0x2b: rY = (dev[0x2a] << 8) | dev[0x2b], rY = TWOS(rY); return;
-	case 0x2c:
-	case 0x2d: rA = (dev[0x2c] << 8) | dev[0x2d]; return;
-	case 0x2e: screen_draw_pixel(); return;
-	case 0x2f: screen_draw_sprite(); return;
-	}
-}
-
 /*
 @|Audio ------------------------------------------------------------- */
 
@@ -638,38 +590,6 @@ audio_get_position(int instance)
 	return uxn_audio[instance].i;
 }
 
-static void
-audio_deo(int instance, Uint8 addr, Uint8 value)
-{
-	dev[addr] = value;
-	switch(addr) {
-	case 0x3f:
-		SDL_LockAudioDevice(audio_id);
-		audio_start(0, &dev[addr & 0xf0]);
-		SDL_UnlockAudioDevice(audio_id);
-		SDL_PauseAudioDevice(audio_id, 0);
-		break;
-	case 0x4f:
-		SDL_LockAudioDevice(audio_id);
-		audio_start(1, &dev[addr & 0xf0]);
-		SDL_UnlockAudioDevice(audio_id);
-		SDL_PauseAudioDevice(audio_id, 0);
-		break;
-	case 0x5f:
-		SDL_LockAudioDevice(audio_id);
-		audio_start(2, &dev[addr & 0xf0]);
-		SDL_UnlockAudioDevice(audio_id);
-		SDL_PauseAudioDevice(audio_id, 0);
-		break;
-	case 0x6f:
-		SDL_LockAudioDevice(audio_id);
-		audio_start(3, &dev[addr & 0xf0]);
-		SDL_UnlockAudioDevice(audio_id);
-		SDL_PauseAudioDevice(audio_id, 0);
-		break;
-	}
-}
-
 /*
 @|Controller -------------------------------------------------------- */
 
@@ -700,14 +620,6 @@ controller_key(Uint8 key)
 		dev[0x83] = key;
 		if(controller_vector) uxn_eval(controller_vector);
 		dev[0x83] = 0;
-	}
-}
-
-static void
-controller_deo(Uint8 addr)
-{
-	switch(addr) {
-	case 0x81: controller_vector = PEEK2(&dev[0x80]); break;
 	}
 }
 
@@ -746,14 +658,6 @@ mouse_scroll(Uint16 x, Uint16 y)
 	if(mouse_vector) uxn_eval(mouse_vector);
 	dev[0x9a] = 0, dev[0x9b] = 0;
 	dev[0x9c] = 0, dev[0x9d] = 0;
-}
-
-static void
-mouse_deo(Uint8 addr)
-{
-	switch(addr) {
-	case 0x91: mouse_vector = PEEK2(&dev[0x90]); break;
-	}
 }
 
 /*
@@ -1056,11 +960,131 @@ file_delete(UxnFile *c)
 	return c->outside_sandbox ? 0 : unlink(c->current_filename);
 }
 
-static void
-file_deo(Uint8 port)
+/*
+@|Datetime ---------------------------------------------------------- */
+
+#include <time.h>
+
+time_t datetime_seconds;
+struct tm *datetime_t, datetime_zt = {0};
+
+void
+datetime_update(void)
 {
-	Uint16 addr, len, res;
+	datetime_seconds = time(NULL);
+	datetime_t = localtime(&datetime_seconds);
+	if(datetime_t == NULL)
+		datetime_t = &datetime_zt;
+}
+
+/*
+@|Core -------------------------------------------------------------- */
+
+Uint8
+emu_dei(const Uint8 port)
+{
 	switch(port) {
+	/* System */
+	case 0x04: return ptr[0];
+	case 0x05: return ptr[1];
+	/* Screen */
+	case 0x22: return screen_width >> 8;
+	case 0x23: return screen_width;
+	case 0x24: return screen_height >> 8;
+	case 0x25: return screen_height;
+	case 0x28: return rX >> 8;
+	case 0x29: return rX;
+	case 0x2a: return rY >> 8;
+	case 0x2b: return rY;
+	case 0x2c: return rA >> 8;
+	case 0x2d: return rA;
+	/* Audio */
+	case 0x34: return audio_get_vu(0);
+	case 0x44: return audio_get_vu(1);
+	case 0x54: return audio_get_vu(2);
+	case 0x64: return audio_get_vu(3);
+	/* DateTime */
+	case 0xc0: datetime_update(); return (datetime_t->tm_year + 1900) >> 8;
+	case 0xc1: datetime_update(); return (datetime_t->tm_year + 1900);
+	case 0xc2: datetime_update(); return datetime_t->tm_mon;
+	case 0xc3: datetime_update(); return datetime_t->tm_mday;
+	case 0xc4: datetime_update(); return datetime_t->tm_hour;
+	case 0xc5: datetime_update(); return datetime_t->tm_min;
+	case 0xc6: datetime_update(); return datetime_t->tm_sec;
+	case 0xc7: datetime_update(); return datetime_t->tm_wday;
+	case 0xc8: datetime_update(); return datetime_t->tm_yday >> 8;
+	case 0xc9: datetime_update(); return datetime_t->tm_yday;
+	case 0xca: datetime_update(); return datetime_t->tm_isdst;
+	}
+	return dev[port];
+}
+
+void
+emu_deo(Uint8 addr, Uint8 value)
+{
+	dev[addr] = value;
+	Uint16 len, res;
+	switch(addr) {
+	/* System */
+	case 0x03: system_expansion(PEEK2(dev + 2)); return;
+	case 0x04: ptr[0] = dev[4]; return;
+	case 0x05: ptr[1] = dev[5]; return;
+	case 0x08:
+	case 0x09:
+	case 0x0a:
+	case 0x0b:
+	case 0x0c:
+	case 0x0d: screen_colorize(); return;
+	case 0x0e: system_print("WST", 0), system_print("RST", 1); return;
+	/* Console */
+	case 0x11: console_vector = PEEK2(&dev[0x10]); return;
+	case 0x18: fputc(dev[0x18], stdout), fflush(stdout); return;
+	case 0x19: fputc(dev[0x19], stderr), fflush(stderr); return;
+	case 0x1a: fprintf(stderr, "%02x", dev[0x1a]); break;
+	case 0x1b: fprintf(stderr, "%02x", dev[0x1b]); break;
+	/* Screen */
+	case 0x21: screen_vector = PEEK2(&dev[0x20]); return;
+	case 0x23: screen_resize(PEEK2(&dev[0x22]) & 0xfff, screen_height & 0xfff); return;
+	case 0x25: screen_resize(screen_width & 0xfff, PEEK2(&dev[0x24]) & 0xfff); return;
+	case 0x26: rMX = dev[0x26] & 0x1, rMY = dev[0x26] & 0x2, rMA = dev[0x26] & 0x4, rML = dev[0x26] >> 4, rDX = rMX << 3, rDY = rMY << 2; return;
+	case 0x28:
+	case 0x29: rX = (dev[0x28] << 8) | dev[0x29], rX = TWOS(rX); return;
+	case 0x2a:
+	case 0x2b: rY = (dev[0x2a] << 8) | dev[0x2b], rY = TWOS(rY); return;
+	case 0x2c:
+	case 0x2d: rA = (dev[0x2c] << 8) | dev[0x2d]; return;
+	case 0x2e: screen_draw_pixel(); return;
+	case 0x2f: screen_draw_sprite(); return;
+	/* Audio */
+	case 0x3f:
+		SDL_LockAudioDevice(audio_id);
+		audio_start(0, &dev[addr & 0xf0]);
+		SDL_UnlockAudioDevice(audio_id);
+		SDL_PauseAudioDevice(audio_id, 0);
+		break;
+	case 0x4f:
+		SDL_LockAudioDevice(audio_id);
+		audio_start(1, &dev[addr & 0xf0]);
+		SDL_UnlockAudioDevice(audio_id);
+		SDL_PauseAudioDevice(audio_id, 0);
+		break;
+	case 0x5f:
+		SDL_LockAudioDevice(audio_id);
+		audio_start(2, &dev[addr & 0xf0]);
+		SDL_UnlockAudioDevice(audio_id);
+		SDL_PauseAudioDevice(audio_id, 0);
+		break;
+	case 0x6f:
+		SDL_LockAudioDevice(audio_id);
+		audio_start(3, &dev[addr & 0xf0]);
+		SDL_UnlockAudioDevice(audio_id);
+		SDL_PauseAudioDevice(audio_id, 0);
+		break;
+	/* Controller */
+	case 0x81: controller_vector = PEEK2(&dev[0x80]); return;
+	/* Mouse */
+	case 0x91: mouse_vector = PEEK2(&dev[0x90]); return;
+	/* File 1 */
 	case 0xa5:
 		addr = PEEK2(&dev[0xa4]);
 		len = PEEK2(&dev[0xaa]);
@@ -1128,88 +1152,6 @@ file_deo(Uint8 port)
 		res = file_write(&uxn_file[1], &ram[addr], len, dev[0xb7]);
 		POKE2(&dev[0xb2], res);
 		break;
-	}
-}
-
-/*
-@|Datetime ---------------------------------------------------------- */
-
-#include <time.h>
-
-time_t datetime_seconds;
-struct tm *datetime_t, datetime_zt = {0};
-
-void
-datetime_update(void)
-{
-	datetime_seconds = time(NULL);
-	datetime_t = localtime(&datetime_seconds);
-	if(datetime_t == NULL)
-		datetime_t = &datetime_zt;
-}
-
-/*
-@|Core -------------------------------------------------------------- */
-
-Uint8
-emu_dei(const Uint8 port)
-{
-	switch(port) {
-	/* System */
-	case 0x04: return ptr[0];
-	case 0x05: return ptr[1];
-	/* Screen */
-	case 0x22: return screen_width >> 8;
-	case 0x23: return screen_width;
-	case 0x24: return screen_height >> 8;
-	case 0x25: return screen_height;
-	case 0x28: return rX >> 8;
-	case 0x29: return rX;
-	case 0x2a: return rY >> 8;
-	case 0x2b: return rY;
-	case 0x2c: return rA >> 8;
-	case 0x2d: return rA;
-	/* Audio */
-	case 0x34: return audio_get_vu(0);
-	case 0x44: return audio_get_vu(1);
-	case 0x54: return audio_get_vu(2);
-	case 0x64: return audio_get_vu(3);
-	/* DateTime */
-	case 0xc0: datetime_update(); return (datetime_t->tm_year + 1900) >> 8;
-	case 0xc1: datetime_update(); return (datetime_t->tm_year + 1900);
-	case 0xc2: datetime_update(); return datetime_t->tm_mon;
-	case 0xc3: datetime_update(); return datetime_t->tm_mday;
-	case 0xc4: datetime_update(); return datetime_t->tm_hour;
-	case 0xc5: datetime_update(); return datetime_t->tm_min;
-	case 0xc6: datetime_update(); return datetime_t->tm_sec;
-	case 0xc7: datetime_update(); return datetime_t->tm_wday;
-	case 0xc8: datetime_update(); return datetime_t->tm_yday >> 8;
-	case 0xc9: datetime_update(); return datetime_t->tm_yday;
-	case 0xca: datetime_update(); return datetime_t->tm_isdst;
-	}
-	return dev[port];
-}
-
-void
-emu_deo(Uint8 addr, Uint8 value)
-{
-	Uint8 p = addr & 0x0f, d = addr & 0xf0;
-	dev[addr] = value;
-	switch(d) {
-	case 0x00:
-		system_deo(addr);
-		if(p > 0x7 && p < 0xe) screen_colorize();
-		break;
-	case 0x10: console_deo(addr); break;
-	case 0x20: screen_deo(addr); break;
-	case 0x30: audio_deo(0, addr, value); break;
-	case 0x40: audio_deo(1, addr, value); break;
-	case 0x50: audio_deo(2, addr, value); break;
-	case 0x60: audio_deo(3, addr, value); break;
-	case 0x80: controller_deo(addr); break;
-	case 0x90: mouse_deo(addr); break;
-	case 0xa0: file_deo(addr); break;
-	case 0xb0: file_deo(addr); break;
 	}
 }
 
