@@ -215,16 +215,6 @@ system_error(char *msg, const char *err)
 
 /* IO */
 
-static Uint8
-system_dei(Uint8 addr)
-{
-	switch(addr) {
-	case 0x04: return ptr[0];
-	case 0x05: return ptr[1];
-	default: return dev[addr];
-	}
-}
-
 static void
 system_deo(Uint8 port)
 {
@@ -643,17 +633,6 @@ Uint16
 audio_get_position(int instance)
 {
 	return uxn_audio[instance].i;
-}
-
-static Uint8
-audio_dei(int instance, Uint8 *d, Uint8 port)
-{
-	if(!audio_id) return d[port];
-	switch(port) {
-	case 0x4: return audio_get_vu(instance);
-	case 0x2: POKE2(d + 0x2, audio_get_position(instance)); /* fall through */
-	default: return d[port];
-	}
 }
 
 static void
@@ -1152,12 +1131,6 @@ datetime_update(void)
 Uint8
 emu_dei(const Uint8 port)
 {
-	Uint8 p = port & 0x0f, d = port & 0xf0;
-	if(d == 0x30) return audio_dei(0, &dev[d], p);
-	if(d == 0x40) return audio_dei(1, &dev[d], p);
-	if(d == 0x50) return audio_dei(2, &dev[d], p);
-	if(d == 0x60) return audio_dei(3, &dev[d], p);
-
 	switch(port) {
 	/* System */
 	case 0x04: return ptr[0];
@@ -1173,6 +1146,11 @@ emu_dei(const Uint8 port)
 	case 0x2b: return rY;
 	case 0x2c: return rA >> 8;
 	case 0x2d: return rA;
+	/* Audio */
+	case 0x34: return audio_get_vu(0);
+	case 0x44: return audio_get_vu(1);
+	case 0x54: return audio_get_vu(2);
+	case 0x64: return audio_get_vu(3);
 	/* DateTime */
 	case 0xc0: datetime_update(); return (datetime_t->tm_year + 1900) >> 8;
 	case 0xc1: datetime_update(); return (datetime_t->tm_year + 1900);
