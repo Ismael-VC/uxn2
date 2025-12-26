@@ -1308,6 +1308,9 @@ emu_event(void)
 			return 0;
 		else if(event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_EXPOSED)
 			screen_reqdraw = 1;
+		/* Console */
+		else if(event.type == stdin_event)
+			console_input(event.cbutton.button, event.cbutton.state);
 		/* Mouse */
 		else if(event.type == SDL_MOUSEMOTION)
 			mouse_pos(event.motion.x, event.motion.y);
@@ -1375,9 +1378,6 @@ emu_event(void)
 			case SDL_HAT_CENTERED: controller_up(0x10 | 0x20 | 0x40 | 0x80); break;
 			}
 		}
-		/* Console */
-		else if(event.type == stdin_event)
-			console_input(event.cbutton.button, event.cbutton.state);
 	}
 	return 1;
 }
@@ -1487,9 +1487,10 @@ main(int argc, char **argv)
 			console_input('\n', i == argc - 1 ? CONSOLE_END : CONSOLE_EOA);
 		}
 	}
-	/* Run */
-	if(!emu_init())
-		return !fprintf(stdout, "Could not initialize %s.\n", argv[0]);
-	emu_run();
+	if(!dev[0x0f]) {
+		if(!emu_init())
+			return !fprintf(stdout, "Could not initialize %s.\n", argv[0]);
+		emu_run();
+	}
 	return dev[0x0f] & 0x7f;
 }
