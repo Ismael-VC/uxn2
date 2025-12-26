@@ -42,99 +42,85 @@ static SDL_Thread *stdin_thread;
 #define PEEK2(d) (*(d) << 8 | (d)[1])
 #define POKE2(d, v) { *(d) = (v) >> 8; (d)[1] = (v); }
 
-typedef struct {
-	Uint8 dat[0x100], ptr;
-} Stack;
+#define NEXT if(--cycles) goto step; else return 0;
 
-typedef struct Uxn {
-	Stack wst, rst;
-} Uxn;
-
-Uint8 *ram, dev[0x100];
-
-Uxn uxn;
-
-Uint8 emu_dei(Uint8 addr);
-void emu_deo( Uint8 addr, Uint8 value);
-
-#define OPC(opc, init, body) {\
-	case 0x00|opc: {const int _2=0,_r=0;init body;} break;\
-	case 0x20|opc: {const int _2=1,_r=0;init body;} break;\
-	case 0x40|opc: {const int _2=0,_r=1;init body;} break;\
-	case 0x60|opc: {const int _2=1,_r=1;init body;} break;\
-	case 0x80|opc: {const int _2=0,_r=0,k=uxn.wst.ptr;init uxn.wst.ptr=k;body;} break;\
-	case 0xa0|opc: {const int _2=1,_r=0,k=uxn.wst.ptr;init uxn.wst.ptr=k;body;} break;\
-	case 0xc0|opc: {const int _2=0,_r=1,k=uxn.rst.ptr;init uxn.rst.ptr=k;body;} break;\
-	case 0xe0|opc: {const int _2=1,_r=1,k=uxn.rst.ptr;init uxn.rst.ptr=k;body;} break;\
+#define OPC(opc, A, B) {\
+	case 0x00|opc: {const int _2=0,_r=0;A B;} NEXT\
+	case 0x20|opc: {const int _2=1,_r=0;A B;} NEXT\
+	case 0x40|opc: {const int _2=0,_r=1;A B;} NEXT\
+	case 0x60|opc: {const int _2=1,_r=1;A B;} NEXT\
+	case 0x80|opc: {const int _2=0,_r=0;int k=ptr[0];A ptr[0]=k;B;} NEXT\
+	case 0xa0|opc: {const int _2=1,_r=0;int k=ptr[0];A ptr[0]=k;B;} NEXT\
+	case 0xc0|opc: {const int _2=0,_r=1;int k=ptr[1];A ptr[1]=k;B;} NEXT\
+	case 0xe0|opc: {const int _2=1,_r=1;int k=ptr[1];A ptr[1]=k;B;} NEXT\
 }
 
-/* Microcode */
+#define REM ptr[_r] -= 1 + _2;
+#define DEC(m) stk[m][--ptr[m]]
+#define INC(m) stk[m][ptr[m]++]
+#define IMM(r) { r = ram[pc++] << 8, r |= ram[pc++]; }
+#define MOV(x) { if(_2) pc = x; else pc += (signed char)x; }
+#define PO1(o) o = DEC(_r);
+#define PO2(o) { o = DEC(_r), o |= DEC(_r) << 8; }
+#define POx(o) if(_2) PO2(o) else PO1(o)
+#define GOT(o) if(_2) PO1(o[1]) PO1(o[0])
+#define DEO(o,r) emu_deo(o, r[0]); if(_2) emu_deo(o + 1, r[1]);
+#define POK(o,r,m) ram[o] = r[0]; if(_2) ram[(o + 1) & m] = r[1];
+#define RP1(i) INC(!_r) = i;
+#define PU1(i) INC(_r) = i;
+#define PUx(i) if(_2) { c = (i); PU1(c >> 8) PU1(c) } else PU1(i)
+#define PUT(i) PU1(i[0]) if(_2) PU1(i[1])
+#define DEI(i,r) r[0] = emu_dei(i); if(_2) r[1] = emu_dei(i + 1); PUT(r)
+#define PEK(i,r,m) r[0] = ram[i]; if(_2) r[1] = ram[(i + 1) & m]; PUT(r)
 
-#define JMI a = ram[pc] << 8 | ram[pc + 1], pc += a + 2;
-#define REM if(_r) uxn.rst.ptr -= 1 + _2; else uxn.wst.ptr -= 1 + _2;
-#define INC(s) uxn.s.dat[uxn.s.ptr++]
-#define DEC(s) uxn.s.dat[--uxn.s.ptr]
-#define JMP(x) { if(_2) pc = x; else pc += (Sint8)x; }
-#define PO1(o) { o = _r ? DEC(rst) : DEC(wst);}
-#define PO2(o) { if(_r) o = DEC(rst), o |= DEC(rst) << 8; else o = DEC(wst), o |= DEC(wst) << 8; }
-#define POx(o) { if(_2) PO2(o) else PO1(o) }
-#define PU1(i) { if(_r) INC(rst) = i; else INC(wst) = i; }
-#define RP1(i) { if(_r) INC(wst) = i; else INC(rst) = i; }
-#define PUx(i) { if(_2) { c = (i); PU1(c >> 8) PU1(c) } else PU1(i) }
-#define GET(o) { if(_2) PO1(o[1]) PO1(o[0]) }
-#define PUT(i) { PU1(i[0]) if(_2) PU1(i[1]) }
-#define DEI(i,o) o[0] = emu_dei(i); if(_2) o[1] = emu_dei(i + 1); PUT(o)
-#define DEO(i,j) emu_deo(i, j[0]); if(_2) emu_deo(i + 1, j[1]);
-#define PEK(i,o,m) o[0] = ram[i]; if(_2) o[1] = ram[(i + 1) & m]; PUT(o)
-#define POK(i,j,m) ram[i] = j[0]; if(_2) ram[(i + 1) & m] = j[1];
+Uint8 *ram, dev[0x100], ptr[2], stk[2][0x100], emu_dei(const Uint8 port);
+void emu_deo(const Uint8 port, const Uint8 value);
 
-int
+unsigned int
 uxn_eval(Uint16 pc)
 {
-	unsigned int a, b, c, x[2], y[2], z[2], step;
-	if(!pc || dev[0x0f]) return 0;
-	for(step = STEP_MAX; step; step--) {
-		switch(ram[pc++]) {
-		/* BRK */ case 0x00: return 1;
-		/* JCI */ case 0x20: if(DEC(wst)) { JMI break; } pc += 2; break;
-		/* JMI */ case 0x40: JMI break;
-		/* JSI */ case 0x60: c = pc + 2; INC(rst) = c >> 8; INC(rst) = c; JMI break;
-		/* LI2 */ case 0xa0: INC(wst) = ram[pc++]; /* fall-through */
-		/* LIT */ case 0x80: INC(wst) = ram[pc++]; break;
-		/* L2r */ case 0xe0: INC(rst) = ram[pc++]; /* fall-through */
-		/* LIr */ case 0xc0: INC(rst) = ram[pc++]; break;
-		/* INC */ OPC(0x01,POx(a),PUx(a + 1))
-		/* POP */ OPC(0x02,REM   ,{})
-		/* NIP */ OPC(0x03,GET(x) REM   ,PUT(x))
-		/* SWP */ OPC(0x04,GET(x) GET(y),PUT(x) PUT(y))
-		/* ROT */ OPC(0x05,GET(x) GET(y) GET(z),PUT(y) PUT(x) PUT(z))
-		/* DUP */ OPC(0x06,GET(x),PUT(x) PUT(x))
-		/* OVR */ OPC(0x07,GET(x) GET(y),PUT(y) PUT(x) PUT(y))
-		/* EQU */ OPC(0x08,POx(a) POx(b),PU1(b == a))
-		/* NEQ */ OPC(0x09,POx(a) POx(b),PU1(b != a))
-		/* GTH */ OPC(0x0a,POx(a) POx(b),PU1(b > a))
-		/* LTH */ OPC(0x0b,POx(a) POx(b),PU1(b < a))
-		/* JMP */ OPC(0x0c,POx(a),JMP(a))
-		/* JCN */ OPC(0x0d,POx(a) PO1(b),if(b) JMP(a))
-		/* JSR */ OPC(0x0e,POx(a),RP1(pc >> 8) RP1(pc) JMP(a))
-		/* STH */ OPC(0x0f,GET(x),RP1(x[0]) if(_2) RP1(x[1]))
-		/* LDZ */ OPC(0x10,PO1(a),PEK(a, x, 0xff))
-		/* STZ */ OPC(0x11,PO1(a) GET(y),POK(a, y, 0xff))
-		/* LDR */ OPC(0x12,PO1(a),PEK(pc + (Sint8)a, x, 0xffff))
-		/* STR */ OPC(0x13,PO1(a) GET(y),POK(pc + (Sint8)a, y, 0xffff))
-		/* LDA */ OPC(0x14,PO2(a),PEK(a, x, 0xffff))
-		/* STA */ OPC(0x15,PO2(a) GET(y),POK(a, y, 0xffff))
-		/* DEI */ OPC(0x16,PO1(a),DEI(a, x))
-		/* DEO */ OPC(0x17,PO1(a) GET(y),DEO(a, y))
-		/* ADD */ OPC(0x18,POx(a) POx(b),PUx(b + a))
-		/* SUB */ OPC(0x19,POx(a) POx(b),PUx(b - a))
-		/* MUL */ OPC(0x1a,POx(a) POx(b),PUx(b * a))
-		/* DIV */ OPC(0x1b,POx(a) POx(b),PUx(a ? b / a : 0))
-		/* AND */ OPC(0x1c,POx(a) POx(b),PUx(b & a))
-		/* ORA */ OPC(0x1d,POx(a) POx(b),PUx(b | a))
-		/* EOR */ OPC(0x1e,POx(a) POx(b),PUx(b ^ a))
-		/* SFT */ OPC(0x1f,PO1(a) POx(b),PUx(b >> (a & 0xf) << (a >> 4)))
-		}
+	unsigned int a, b, c, x[2], y[2], z[2], cycles = 0x80000000;
+step:
+	switch(ram[pc++]) {
+	/* BRK */ case 0x00: return 1;
+	/* JCI */ case 0x20: if(DEC(0)) { IMM(c) pc += c; } else pc += 2; NEXT
+	/* JMI */ case 0x40: IMM(c) pc += c; NEXT
+	/* JSI */ case 0x60: IMM(c) INC(1) = pc >> 8, INC(1) = pc, pc += c; NEXT
+	/* LI2 */ case 0xa0: INC(0) = ram[pc++]; /* fall-through */
+	/* LIT */ case 0x80: INC(0) = ram[pc++]; NEXT
+	/* L2r */ case 0xe0: INC(1) = ram[pc++]; /* fall-through */
+	/* LIr */ case 0xc0: INC(1) = ram[pc++]; NEXT
+	/* INC */ OPC(0x01,POx(a),PUx(a + 1))
+	/* POP */ OPC(0x02,REM,{})
+	/* NIP */ OPC(0x03,GOT(x) REM,PUT(x))
+	/* SWP */ OPC(0x04,GOT(x) GOT(y),PUT(x) PUT(y))
+	/* ROT */ OPC(0x05,GOT(x) GOT(y) GOT(z),PUT(y) PUT(x) PUT(z))
+	/* DUP */ OPC(0x06,GOT(x),PUT(x) PUT(x))
+	/* OVR */ OPC(0x07,GOT(x) GOT(y),PUT(y) PUT(x) PUT(y))
+	/* EQU */ OPC(0x08,POx(a) POx(b),PU1(b == a))
+	/* NEQ */ OPC(0x09,POx(a) POx(b),PU1(b != a))
+	/* GTH */ OPC(0x0a,POx(a) POx(b),PU1(b > a))
+	/* LTH */ OPC(0x0b,POx(a) POx(b),PU1(b < a))
+	/* JMP */ OPC(0x0c,POx(a),MOV(a))
+	/* JCN */ OPC(0x0d,POx(a) PO1(b),if(b) MOV(a))
+	/* JSR */ OPC(0x0e,POx(a),RP1(pc >> 8) RP1(pc) MOV(a))
+	/* STH */ OPC(0x0f,GOT(x),RP1(x[0]) if(_2) RP1(x[1]))
+	/* LDZ */ OPC(0x10,PO1(a),PEK(a, x, 0xff))
+	/* STZ */ OPC(0x11,PO1(a) GOT(y),POK(a, y, 0xff))
+	/* LDR */ OPC(0x12,PO1(a),PEK(pc + (signed char)a, x, 0xffff))
+	/* STR */ OPC(0x13,PO1(a) GOT(y),POK(pc + (signed char)a, y, 0xffff))
+	/* LDA */ OPC(0x14,PO2(a),PEK(a, x, 0xffff))
+	/* STA */ OPC(0x15,PO2(a) GOT(y),POK(a, y, 0xffff))
+	/* DEI */ OPC(0x16,PO1(a),DEI(a, x))
+	/* DEO */ OPC(0x17,PO1(a) GOT(y),DEO(a, y))
+	/* ADD */ OPC(0x18,POx(a) POx(b),PUx(b + a))
+	/* SUB */ OPC(0x19,POx(a) POx(b),PUx(b - a))
+	/* MUL */ OPC(0x1a,POx(a) POx(b),PUx(b * a))
+	/* DIV */ OPC(0x1b,POx(a) POx(b),PUx(a ? b / a : 0))
+	/* AND */ OPC(0x1c,POx(a) POx(b),PUx(b & a))
+	/* ORA */ OPC(0x1d,POx(a) POx(b),PUx(b | a))
+	/* EOR */ OPC(0x1e,POx(a) POx(b),PUx(b ^ a))
+	/* SFT */ OPC(0x1f,PO1(a) POx(b),PUx(b >> (a & 0xf) << (a >> 4)))
 	}
 	return 0;
 }
@@ -153,13 +139,13 @@ Uint16 metadata_addr;
 char metadata_buffer[METADATA_LEN + 1];
 
 static void
-system_print(char *name, Stack *s)
+system_print(char *name, int r)
 {
 	Uint8 i;
 	fprintf(stderr, "%s ", name);
-	for(i = s->ptr - 8; i != (Uint8)(s->ptr); i++)
-		fprintf(stderr, "%02x%c", s->dat[i], i == 0xff ? '|' : ' ');
-	fprintf(stderr, "<%02x\n", s->ptr);
+	for(i = ptr[r] - 8; i != ptr[r]; i++)
+		fprintf(stderr, "%02x%c", stk[r][i], i == 0xff ? '|' : ' ');
+	fprintf(stderr, "<%02x\n", ptr[r]);
 }
 
 static int
@@ -199,7 +185,7 @@ system_reboot(int soft)
 	int i;
 	for(i = 0x0; i < 0x100; i++) dev[i] = 0;
 	for(i = soft ? 0x100 : 0; i < PAGE_SIZE; i++) ram[i] = 0;
-	uxn.wst.ptr = uxn.rst.ptr = 0;
+	ptr[0] = ptr[1] = 0;
 	return system_boot(ram, boot_path, 0);
 }
 
@@ -259,8 +245,8 @@ Uint8
 system_dei(Uint8 addr)
 {
 	switch(addr) {
-	case 0x4: return uxn.wst.ptr;
-	case 0x5: return uxn.rst.ptr;
+	case 0x04: return ptr[0];
+	case 0x05: return ptr[1];
 	default: return dev[addr];
 	}
 }
@@ -273,19 +259,13 @@ system_deo(Uint8 port)
 		system_expansion(PEEK2(dev + 2));
 		break;
 	}
-	case 0x4:
-		uxn.wst.ptr = dev[4];
-		break;
-	case 0x5:
-		uxn.rst.ptr = dev[5];
-		break;
+	case 0x04: ptr[0] = dev[4]; return;
+	case 0x05: ptr[1] = dev[5]; return;
 	case 0x7:
 		metadata_addr = PEEK2(&dev[0x6]);
 		break;
 	case 0xe:
-		system_print("WST", &uxn.wst);
-		system_print("RST", &uxn.rst);
-		break;
+		system_print("WST", 0), system_print("RST", 1); return;
 	}
 }
 
