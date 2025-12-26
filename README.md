@@ -1,29 +1,26 @@
 # Uxn2
 
-An emulator for the [Uxn CPU](https://wiki.xxiivv.com/site/uxn.html) and [Varvara Computer](https://wiki.xxiivv.com/site/varvara.html), written in C99(SDL2). 
+A graphical emulator for the [Varvara Computer](https://wiki.xxiivv.com/site/varvara.html), written in C99(SDL2). 
 
 ## Building 
 
-### Makefile
-
-For your convenience a [Makefile](https://en.wikipedia.org/wiki/Make_(software)#Makefile) is provided. You can run `make install` to build and install the files.
-
-By default, files are installed into `~/.local` but this can be overridden using `PREFIX`:
+You must have [SDL2](https://www.libsdl.org/) installed.
 
 ```sh
-# installs files into ~/.local/bin and ~/.local/share
-$ make install
-
-# installs files into /opt/uxn/bin and /opt/uxn/share
-$ make PREFIX=/opt/uxn install
+cc -Wall -Wno-unknown-pragmas -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT -DNDEBUG -O2 -g0 -s -L/usr/local/lib -L/usr/lib -lSDL2 src/uxn2.c -o bin/uxn2
 ```
 
-### Graphical
-
-All you need is SDL2.
+For your convenience a [Makefile](https://en.wikipedia.org/wiki/Make_(software)#Makefile) is provided. 
 
 ```sh
-cc --std=c99 -Wall -Wno-unknown-pragmas -I/usr/include/SDL2 -D_GNU_SOURCE=1 -D_REENTRANT -DNDEBUG -O2 -g0 -s -L/usr/local/lib  -L/usr/lib -lSDL2 src/uxn2.c -o bin/uxn2
+make run
+```
+
+You can run `make install` to build and install the files. By default, files are installed into `~/.local` but this can be overridden using `PREFIX`:
+
+```sh
+# installs files into /opt/uxn/bin
+$ make PREFIX=/opt/uxn install
 ```
 
 ## Usage
