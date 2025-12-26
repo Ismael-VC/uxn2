@@ -231,44 +231,39 @@ console_input(int c, unsigned int type)
 /*
 @|Screen ------------------------------------------------------------ */
 
+static int emu_zoom = 1;
+
+#define MAR(x) (x + 0x8)
+#define MAR2(x) (x + 0x10)
+
 static Uint8 *screen_layers;
 static int screen_width, screen_height, screen_zoom;
 static int screen_x1, screen_y1, screen_x2, screen_y2, screen_reqsize, screen_reqdraw;
 static unsigned int screen_vector, *screen_pixels, screen_palette[16];
 static int rX, rY, rA, rMX, rMY, rMA, rML, rDX, rDY;
 
-static Uint32 zoom = 1;
+void emu_redraw(void), emu_resize(void);
 
-#define MAR(x) (x + 0x8)
-#define MAR2(x) (x + 0x10)
-
-typedef struct UxnScreen {
-	Uint8 *fg, *bg;
-} UxnScreen;
-
-UxnScreen uxn_screen;
-
-void emu_resize(void), emu_redraw(void);
-
-static Uint8 blending[4][16] = {
-	{0, 0, 0, 0, 1, 0, 1, 1, 2, 2, 0, 2, 3, 3, 3, 0},
-	{0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3},
-	{1, 2, 3, 1, 1, 2, 3, 1, 1, 2, 3, 1, 1, 2, 3, 1},
-	{2, 3, 1, 2, 2, 3, 1, 2, 2, 3, 1, 2, 2, 3, 1, 2}};
-
-static int
-screen_changed(void)
-{
-	CLAMP(screen_x1, 0, screen_width);
-	CLAMP(screen_y1, 0, screen_height);
-	CLAMP(screen_x2, 0, screen_width);
-	CLAMP(screen_y2, 0, screen_height);
-	return screen_x2 > screen_x1 &&
-		screen_y2 > screen_y1;
-}
+static const Uint8 blending[16][2][4] = {
+	{{0, 0, 1, 2}, {0, 0, 4, 8}},
+	{{0, 1, 2, 3}, {0, 4, 8, 12}},
+	{{0, 2, 3, 1}, {0, 8, 12, 4}},
+	{{0, 3, 1, 2}, {0, 12, 4, 8}},
+	{{1, 0, 1, 2}, {4, 0, 4, 8}},
+	{{0, 1, 2, 3}, {0, 4, 8, 12}},
+	{{1, 2, 3, 1}, {4, 8, 12, 4}},
+	{{1, 3, 1, 2}, {4, 12, 4, 8}},
+	{{2, 0, 1, 2}, {8, 0, 4, 8}},
+	{{2, 1, 2, 3}, {8, 4, 8, 12}},
+	{{0, 2, 3, 1}, {0, 8, 12, 4}},
+	{{2, 3, 1, 2}, {8, 12, 4, 8}},
+	{{3, 0, 1, 2}, {12, 0, 4, 8}},
+	{{3, 1, 2, 3}, {12, 4, 8, 12}},
+	{{3, 2, 3, 1}, {12, 8, 12, 4}},
+	{{0, 3, 1, 2}, {0, 12, 4, 8}}};
 
 static void
-screen_change(int x1, int y1, int x2, int y2)
+screen_change(const int x1, const int y1, const int x2, const int y2)
 {
 	if(x1 < screen_x1) screen_x1 = x1;
 	if(y1 < screen_y1) screen_y1 = y1;
@@ -279,42 +274,31 @@ screen_change(int x1, int y1, int x2, int y2)
 static void
 screen_colorize(void)
 {
-	int i, shift;
-	unsigned long colors[4];
+	int i, shift, colors[4];
 	for(i = 0, shift = 4; i < 4; ++i, shift ^= 4) {
 		Uint8
-			r = (dev[0x8 + i / 2] >> shift) & 0xf,
-			g = (dev[0xa + i / 2] >> shift) & 0xf,
-			b = (dev[0xc + i / 2] >> shift) & 0xf;
+			r = dev[0x8 + i / 2] >> shift & 0xf,
+			g = dev[0xa + i / 2] >> shift & 0xf,
+			b = dev[0xc + i / 2] >> shift & 0xf;
 		colors[i] = 0x0f000000 | r << 16 | g << 8 | b;
 		colors[i] |= colors[i] << 4;
 	}
 	for(i = 0; i < 16; i++)
-		screen_palette[i] = colors[(i >> 2) ? (i >> 2) : (i & 3)];
-	screen_change(0, 0, screen_width, screen_height);
+		screen_palette[i] = colors[i >> 2 ? i >> 2 : i & 3];
+	screen_reqdraw = 1;
 }
 
 static void
-screen_resize(Uint16 width, Uint16 height)
+screen_resize(int width, int height)
 {
-	Uint32 *pixels;
-	CLAMP(width, 8, 0x800);
-	CLAMP(height, 8, 0x800);
-	pixels = realloc(screen_pixels, width * height * sizeof(Uint32));
-	if(!pixels) return;
-	screen_pixels = pixels;
-	/* on resize */
-	if(screen_width != width || screen_height != height) {
-		int i, length = MAR2(width) * MAR2(height);
-		Uint8 *bg = realloc(uxn_screen.bg, length), *fg = realloc(uxn_screen.fg, length);
-		if(!bg || !fg) return;
-		uxn_screen.bg = bg, uxn_screen.fg = fg;
-		screen_width = width, screen_height = height;
-		for(i = 0; i < length; i++)
-			uxn_screen.bg[i] = uxn_screen.fg[i] = 0;
+	if(width != screen_width || height != screen_height) {
+		int length = MAR2(width) * MAR2(height);
+		screen_layers = realloc(screen_layers, length);
+		memset(screen_layers, 0, length);
+		screen_width = width;
+		screen_height = height;
+		screen_reqsize = screen_reqdraw = 1;
 	}
-	screen_change(0, 0, width, height);
-	emu_resize();
 }
 
 static void
@@ -322,18 +306,18 @@ screen_redraw(void)
 {
 	int i, x, y, k, l;
 	for(y = screen_y1; y < screen_y2; y++) {
-		int ys = y;
+		const int ys = y * screen_zoom;
 		for(x = screen_x1, i = MAR(x) + MAR(y) * MAR2(screen_width); x < screen_x2; x++, i++) {
-			int c = screen_palette[uxn_screen.fg[i] << 2 | uxn_screen.bg[i]];
-			for(k = 0; k < 1; k++) {
-				int oo = ((ys + k) * screen_width + x);
-				for(l = 0; l < 1; l++)
+			const int c = screen_palette[screen_layers[i]];
+			for(k = 0; k < screen_zoom; k++) {
+				const int oo = ((ys + k) * screen_width + x) * screen_zoom;
+				for(l = 0; l < screen_zoom; l++)
 					screen_pixels[oo + l] = c;
 			}
 		}
 	}
-	screen_x1 = screen_y1 = 9999;
-	screen_x2 = screen_y2 = 0;
+	emu_redraw();
+	screen_x1 = screen_y1 = screen_x2 = screen_y2 = screen_reqdraw = 0;
 }
 
 static void
@@ -341,17 +325,35 @@ screen_update(void)
 {
 	if(screen_vector)
 		uxn_eval(screen_vector);
-	if(screen_x2 && screen_y2 && screen_changed())
-		screen_redraw(), emu_redraw();
+	if(screen_reqsize) {
+		screen_pixels = realloc(screen_pixels, screen_width * screen_height * sizeof(unsigned int) * screen_zoom * screen_zoom);
+		screen_reqsize = 0;
+		emu_resize();
+	}
+	if(screen_reqdraw) {
+		screen_x1 = screen_y1 = 0;
+		screen_x2 = screen_width;
+		screen_y2 = screen_height;
+		screen_redraw();
+	} else if(screen_x2 > screen_x1 && screen_y2 > screen_y1) {
+		CLAMP(screen_x1, 0, screen_width);
+		CLAMP(screen_y1, 0, screen_height);
+		CLAMP(screen_x2, 0, screen_width);
+		CLAMP(screen_y2, 0, screen_height);
+		screen_redraw();
+	}
 }
 
 static void
 screen_draw_pixel(void)
 {
-	int ctrl = dev[0x2e];
-	int color = ctrl & 0x3;
-	int len = MAR2(screen_width);
-	Uint8 *layer = ctrl & 0x40 ? uxn_screen.fg : uxn_screen.bg;
+	int layer_mask, color;
+	const int ctrl = dev[0x2e];
+	const int len = MAR2(screen_width);
+	if(ctrl & 0x40)
+		layer_mask = 0x3, color = (ctrl & 0x3) << 2;
+	else
+		layer_mask = 0xc, color = ctrl & 0x3;
 	/* fill mode */
 	if(ctrl & 0x80) {
 		int x1, y1, x2, y2, ax, bx, ay, by, hor, ver;
@@ -363,18 +365,20 @@ screen_draw_pixel(void)
 			y1 = 0, y2 = rY;
 		else
 			y1 = rY, y2 = screen_height;
-		screen_change(x1, y1, x2, y2);
+		screen_reqdraw = 1;
 		x1 = MAR(x1), y1 = MAR(y1);
 		hor = MAR(x2) - x1, ver = MAR(y2) - y1;
 		for(ay = y1 * len, by = ay + ver * len; ay < by; ay += len)
 			for(ax = ay + x1, bx = ax + hor; ax < bx; ax++)
-				layer[ax] = color;
+				screen_layers[ax] = (screen_layers[ax] & layer_mask) | color;
 	}
 	/* pixel mode */
 	else {
-		if(rX >= 0 && rY >= 0 && rX < len && rY < screen_height)
-			layer[MAR(rX) + MAR(rY) * len] = color;
-		screen_change(rX, rY, rX + 1, rY + 1);
+		if(rX >= 0 && rY >= 0 && rX < len && rY < screen_height) {
+			const int ax = MAR(rX) + MAR(rY) * len;
+			screen_layers[ax] = (screen_layers[ax] & layer_mask) | color;
+		}
+		screen_reqdraw = 1;
 		if(rMX) rX++;
 		if(rMY) rY++;
 	}
@@ -383,45 +387,51 @@ screen_draw_pixel(void)
 static void
 screen_draw_sprite(void)
 {
-	int ctrl = dev[0x2f];
-	int blend = ctrl & 0xf, opaque = blend % 5;
-	int fx = ctrl & 0x10 ? -1 : 1, fy = ctrl & 0x20 ? -1 : 1;
-	int qfx = fx > 0 ? 7 : 0, qfy = fy < 0 ? 7 : 0;
-	int dxy = fy * rDX, dyx = fx * rDY;
-	int wmar = MAR(screen_width), wmar2 = MAR2(screen_width);
-	int hmar2 = MAR2(screen_height);
-	int i, x1, x2, y1, y2, ax, ay, qx, qy, x = rX, y = rY;
-	Uint8 *layer = ctrl & 0x40 ? uxn_screen.fg : uxn_screen.bg;
+	const Uint8 *table;
+	const int ctrl = dev[0x2f];
+	const int blend = ctrl & 0xf;
+	const int opaque = blend % 5;
+	const int fx = ctrl & 0x10 ? -1 : 1, fy = ctrl & 0x20 ? -1 : 1;
+	const int qfx = fx > 0 ? 7 : 0, qfy = fy < 0 ? 7 : 0;
+	const int dxy = fy * rDX, dyx = fx * rDY;
+	const int wmar = MAR(screen_width), wmar2 = MAR2(screen_width);
+	const int hmar2 = MAR2(screen_height);
+	int i, x1, x2, y1, y2, ax, ay, bx, by, qx, qy, x = rX, y = rY, layer_mask;
+	if(ctrl & 0x40)
+		layer_mask = 0x3, table = blending[blend][1];
+	else
+		layer_mask = 0xc, table = blending[blend][0];
 	if(ctrl & 0x80) {
-		int addr_incr = rMA << 2;
+		const int addr_incr = rMA << 2;
 		for(i = 0; i <= rML; i++, x += dyx, y += dxy, rA += addr_incr) {
-			Uint16 xmar = MAR(x), ymar = MAR(y);
-			Uint16 xmar2 = MAR2(x), ymar2 = MAR2(y);
+			const Uint16 xmar = MAR(x), ymar2 = MAR2(y);
 			if(xmar < wmar && ymar2 < hmar2) {
-				Uint8 *sprite = &ram[rA];
-				int by = ymar2 * wmar2;
-				for(ay = ymar * wmar2, qy = qfy; ay < by; ay += wmar2, qy += fy) {
-					int ch1 = sprite[qy], ch2 = sprite[qy + 8] << 1, bx = xmar2 + ay;
-					for(ax = xmar + ay, qx = qfx; ax < bx; ax++, qx -= fx) {
-						int color = ((ch1 >> qx) & 1) | ((ch2 >> qx) & 2);
-						if(opaque || color) layer[ax] = blending[color][blend];
+				const Uint16 xmar2 = MAR2(x), ymar = MAR(y);
+				const Uint8 *sprite = &ram[rA];
+				for(ay = ymar * wmar2, by = ymar2 * wmar2, qy = qfy; ay < by; ay += wmar2, qy += fy) {
+					const int ch1 = sprite[qy];
+					const int ch2 = sprite[qy + 8] << 1;
+					for(ax = xmar + ay, bx = xmar2 + ay, qx = qfx; ax < bx; ax++, qx -= fx) {
+						const int color = (ch1 >> qx & 1) | (ch2 >> qx & 2);
+						if(opaque || color)
+							screen_layers[ax] = (screen_layers[ax] & layer_mask) | table[color];
 					}
 				}
 			}
 		}
 	} else {
-		int addr_incr = rMA << 1;
+		const int addr_incr = rMA << 1;
 		for(i = 0; i <= rML; i++, x += dyx, y += dxy, rA += addr_incr) {
-			Uint16 xmar = MAR(x), ymar = MAR(y);
-			Uint16 xmar2 = MAR2(x), ymar2 = MAR2(y);
+			const Uint16 xmar = MAR(x), ymar2 = MAR2(y);
 			if(xmar < wmar && ymar2 < hmar2) {
-				Uint8 *sprite = &ram[rA];
-				int by = ymar2 * wmar2;
-				for(ay = ymar * wmar2, qy = qfy; ay < by; ay += wmar2, qy += fy) {
-					int ch1 = sprite[qy], bx = xmar2 + ay;
-					for(ax = xmar + ay, qx = qfx; ax < bx; ax++, qx -= fx) {
-						int color = (ch1 >> qx) & 1;
-						if(opaque || color) layer[ax] = blending[color][blend];
+				const Uint16 xmar2 = MAR2(x), ymar = MAR(y);
+				const Uint8 *sprite = &ram[rA];
+				for(ay = ymar * wmar2, by = ymar2 * wmar2, qy = qfy; ay < by; ay += wmar2, qy += fy) {
+					const int ch1 = sprite[qy];
+					for(ax = xmar + ay, bx = xmar2 + ay, qx = qfx; ax < bx; ax++, qx -= fx) {
+						const int color = ch1 >> qx & 1;
+						if(opaque || color)
+							screen_layers[ax] = (screen_layers[ax] & layer_mask) | table[color];
 					}
 				}
 			}
@@ -435,7 +445,7 @@ screen_draw_sprite(void)
 		y1 = y, y2 = rY;
 	else
 		y1 = rY, y2 = y;
-	screen_change(x1 - 8, y1 - 8, x2 + 8, y2 + 8);
+	if(!screen_reqdraw) screen_change(x1 - 8, y1 - 8, x2 + 8, y2 + 8);
 	if(rMX) rX += rDX * fx;
 	if(rMY) rY += rDY * fy;
 }
@@ -1197,7 +1207,7 @@ set_zoom(Uint8 z, int win)
 	if(z < 1) return;
 	if(win)
 		set_window_size(emu_window, screen_width * z, screen_height * z);
-	zoom = z;
+	emu_zoom = z;
 }
 
 static void
@@ -1238,7 +1248,7 @@ emu_resize(void)
 	emu_viewport.y = 0;
 	emu_viewport.w = screen_width;
 	emu_viewport.h = screen_height;
-	set_window_size(emu_window, screen_width * zoom, screen_height * zoom);
+	set_window_size(emu_window, screen_width * emu_zoom, screen_height * emu_zoom);
 }
 
 void
@@ -1341,7 +1351,7 @@ emu_event(void)
 			else if(get_button(&event))
 				controller_down(get_button(&event));
 			else if(event.key.keysym.sym == SDLK_F1)
-				set_zoom(zoom == 3 ? 1 : zoom + 1, 1);
+				set_zoom(emu_zoom == 3 ? 1 : emu_zoom + 1, 1);
 			else if(event.key.keysym.sym == SDLK_F2)
 				emu_deo(0xe, 0x1);
 			else if(event.key.keysym.sym == SDLK_F3)
@@ -1430,8 +1440,8 @@ emu_init(void)
 	emu_window = SDL_CreateWindow("Uxn2",
 		SDL_WINDOWPOS_UNDEFINED,
 		SDL_WINDOWPOS_UNDEFINED,
-		screen_width * zoom,
-		screen_height * zoom,
+		screen_width * emu_zoom,
+		screen_height * emu_zoom,
 		window_flags);
 	if(emu_window == NULL)
 		return system_error("sdl_window", SDL_GetError());
@@ -1439,7 +1449,6 @@ emu_init(void)
 	emu_renderer = SDL_CreateRenderer(emu_window, -1, SDL_RENDERER_ACCELERATED);
 	if(emu_renderer == NULL)
 		return system_error("sdl_renderer", SDL_GetError());
-	emu_resize();
 	return 1;
 }
 
@@ -1451,7 +1460,7 @@ emu_run(void)
 	Uint64 frame_interval = perf_freq / 60;
 	Uint64 ms_interval = perf_freq / 1000;
 	/* game loop */
-	for(;!dev[0x0f];) {
+	for(; !dev[0x0f];) {
 		Uint64 now = SDL_GetPerformanceCounter();
 		if(!emu_event())
 			return;
