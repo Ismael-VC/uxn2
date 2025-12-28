@@ -572,6 +572,15 @@ audio_start(int instance, Uint8 *d)
 		c->period = NOTE_PERIOD;
 }
 
+static void
+audio_play(int instance, Uint8 *d)
+{
+	SDL_LockAudioDevice(audio_id);
+	audio_start(instance, d);
+	SDL_UnlockAudioDevice(audio_id);
+	SDL_PauseAudioDevice(audio_id, 0);
+}
+
 Uint8
 audio_get_vu(int instance)
 {
@@ -982,8 +991,8 @@ emu_deo(Uint8 addr, Uint8 value)
 	case 0x11: console_vector = PEEK2(&dev[0x10]); return;
 	case 0x18: fputc(dev[0x18], stdout), fflush(stdout); return;
 	case 0x19: fputc(dev[0x19], stderr), fflush(stderr); return;
-	case 0x1a: fprintf(stderr, "%02x", dev[0x1a]); break;
-	case 0x1b: fprintf(stderr, "%02x", dev[0x1b]); break;
+	case 0x1a: fprintf(stderr, "%02x", dev[0x1a]); return;
+	case 0x1b: fprintf(stderr, "%02x", dev[0x1b]); return;
 	/* Screen */
 	case 0x21: screen_vector = PEEK2(&dev[0x20]); return;
 	case 0x23: screen_resize(PEEK2(&dev[0x22]) & 0xfff, screen_height & 0xfff); return;
@@ -998,30 +1007,10 @@ emu_deo(Uint8 addr, Uint8 value)
 	case 0x2e: screen_draw_pixel(); return;
 	case 0x2f: screen_draw_sprite(); return;
 	/* Audio */
-	case 0x3f:
-		SDL_LockAudioDevice(audio_id);
-		audio_start(0, &dev[addr & 0xf0]);
-		SDL_UnlockAudioDevice(audio_id);
-		SDL_PauseAudioDevice(audio_id, 0);
-		break;
-	case 0x4f:
-		SDL_LockAudioDevice(audio_id);
-		audio_start(1, &dev[addr & 0xf0]);
-		SDL_UnlockAudioDevice(audio_id);
-		SDL_PauseAudioDevice(audio_id, 0);
-		break;
-	case 0x5f:
-		SDL_LockAudioDevice(audio_id);
-		audio_start(2, &dev[addr & 0xf0]);
-		SDL_UnlockAudioDevice(audio_id);
-		SDL_PauseAudioDevice(audio_id, 0);
-		break;
-	case 0x6f:
-		SDL_LockAudioDevice(audio_id);
-		audio_start(3, &dev[addr & 0xf0]);
-		SDL_UnlockAudioDevice(audio_id);
-		SDL_PauseAudioDevice(audio_id, 0);
-		break;
+	case 0x3f: audio_play(0, &dev[addr & 0xf0]); return;
+	case 0x4f: audio_play(1, &dev[addr & 0xf0]); return;
+	case 0x5f: audio_play(2, &dev[addr & 0xf0]); return;
+	case 0x6f: audio_play(3, &dev[addr & 0xf0]); return;
 	/* Controller */
 	case 0x81: controller_vector = PEEK2(&dev[0x80]); return;
 	/* Mouse */
