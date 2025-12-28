@@ -1303,9 +1303,9 @@ static int
 emu_event(void)
 {
 	SDL_Event event;
-	while(SDL_PollEvent(&event) && !dev[0x0f]) {
+	while(SDL_PollEvent(&event)) {
 		/* Window */
-		if(event.type == SDL_QUIT)
+		if(event.type == SDL_QUIT || dev[0x0f])
 			return 0;
 		else if(event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_EXPOSED)
 			screen_reqdraw = 1;
@@ -1441,7 +1441,7 @@ emu_run(void)
 	Uint64 frame_interval = perf_freq / 60;
 	Uint64 ms_interval = perf_freq / 1000;
 	/* game loop */
-	for(; !dev[0x0f];) {
+	for(;;) {
 		Uint64 now = SDL_GetPerformanceCounter();
 		if(!emu_event())
 			return;
