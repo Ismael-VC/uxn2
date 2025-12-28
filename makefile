@@ -45,8 +45,8 @@ bin/uxn2-debug: src/uxn2.c
 
 # Tools
 
-bin/drifloon.rom: etc/utils/drifloon.rom.txt
-	xxd -r -p etc/utils/drifloon.rom.txt bin/drifloon.rom
+bin/drifloon.rom: bin/uxn2 etc/utils/drifloon.rom.txt
+	cat etc/utils/drifloon.rom.txt | ./bin/uxn2 etc/utils/xh.rom > bin/drifloon.rom
 
 # Tests
 
