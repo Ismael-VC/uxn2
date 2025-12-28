@@ -932,6 +932,14 @@ datetime_update(void)
 /*
 @|Core -------------------------------------------------------------- */
 
+static int fullscreen, borderless;
+static SDL_Window *emu_window;
+static SDL_Texture *emu_texture;
+static SDL_Renderer *emu_renderer;
+static SDL_Rect emu_viewport;
+static SDL_Thread *stdin_thread;
+static Uint32 stdin_event;
+
 Uint8
 emu_dei(const Uint8 port)
 {
@@ -1032,13 +1040,43 @@ emu_deo(Uint8 addr, Uint8 value)
 	}
 }
 
-static int fullscreen, borderless;
-static SDL_Window *emu_window;
-static SDL_Texture *emu_texture;
-static SDL_Renderer *emu_renderer;
-static SDL_Rect emu_viewport;
-static SDL_Thread *stdin_thread;
-static Uint32 stdin_event;
+void
+emu_resize(void)
+{
+	if(emu_texture != NULL)
+		SDL_DestroyTexture(emu_texture);
+	SDL_RenderSetLogicalSize(emu_renderer, screen_width, screen_height);
+	emu_texture = SDL_CreateTexture(emu_renderer, SDL_PIXELFORMAT_RGB888, SDL_TEXTUREACCESS_STATIC, screen_width, screen_height);
+	if(emu_texture == NULL || SDL_SetTextureBlendMode(emu_texture, SDL_BLENDMODE_NONE))
+		fprintf(stderr, "SDL_SetTextureBlendMode: %s\n", SDL_GetError());
+	if(SDL_UpdateTexture(emu_texture, NULL, screen_pixels, sizeof(Uint32)) != 0)
+		fprintf(stderr, "SDL_UpdateTexture: %s\n", SDL_GetError());
+	emu_viewport.x = 0;
+	emu_viewport.y = 0;
+	emu_viewport.w = screen_width;
+	emu_viewport.h = screen_height;
+	SDL_SetWindowSize(emu_window, screen_width * emu_zoom, screen_height * emu_zoom);
+	screen_resize(screen_width, screen_height);
+}
+
+void
+emu_redraw(void)
+{
+	if(SDL_UpdateTexture(emu_texture, NULL, screen_pixels, screen_width * sizeof(Uint32)) != 0)
+		fprintf(stderr, "SDL_UpdateTexture: %s\n", SDL_GetError());
+	SDL_RenderClear(emu_renderer);
+	SDL_RenderCopy(emu_renderer, emu_texture, NULL, &emu_viewport);
+	SDL_RenderPresent(emu_renderer);
+}
+
+static void
+emu_restart(unsigned int soft)
+{
+	screen_resize(WIDTH, HEIGHT);
+	system_reboot(soft);
+	uxn_eval(0x100);
+}
+
 
 static int
 stdin_handler(void *p)
@@ -1060,17 +1098,6 @@ stdin_handler(void *p)
 }
 
 static void
-set_window_size(SDL_Window *window, int w, int h)
-{
-	SDL_Point win_old;
-	SDL_GetWindowSize(window, &win_old.x, &win_old.y);
-	if(w == win_old.x && h == win_old.y) return;
-	SDL_RenderClear(emu_renderer);
-	SDL_SetWindowSize(window, w, h);
-	screen_resize(screen_width, screen_height);
-}
-
-static void
 set_fullscreen(int value, int win)
 {
 	Uint32 flags = 0;
@@ -1087,42 +1114,6 @@ set_borderless(int value)
 	if(fullscreen) return;
 	borderless = value;
 	SDL_SetWindowBordered(emu_window, !value);
-}
-
-void
-emu_resize(void)
-{
-	if(emu_texture != NULL)
-		SDL_DestroyTexture(emu_texture);
-	SDL_RenderSetLogicalSize(emu_renderer, screen_width, screen_height);
-	emu_texture = SDL_CreateTexture(emu_renderer, SDL_PIXELFORMAT_RGB888, SDL_TEXTUREACCESS_STATIC, screen_width, screen_height);
-	if(emu_texture == NULL || SDL_SetTextureBlendMode(emu_texture, SDL_BLENDMODE_NONE))
-		fprintf(stderr, "SDL_SetTextureBlendMode: %s\n", SDL_GetError());
-	if(SDL_UpdateTexture(emu_texture, NULL, screen_pixels, sizeof(Uint32)) != 0)
-		fprintf(stderr, "SDL_UpdateTexture: %s\n", SDL_GetError());
-	emu_viewport.x = 0;
-	emu_viewport.y = 0;
-	emu_viewport.w = screen_width;
-	emu_viewport.h = screen_height;
-	set_window_size(emu_window, screen_width * emu_zoom, screen_height * emu_zoom);
-}
-
-void
-emu_redraw(void)
-{
-	if(SDL_UpdateTexture(emu_texture, NULL, screen_pixels, screen_width * sizeof(Uint32)) != 0)
-		fprintf(stderr, "SDL_UpdateTexture: %s\n", SDL_GetError());
-	SDL_RenderClear(emu_renderer);
-	SDL_RenderCopy(emu_renderer, emu_texture, NULL, &emu_viewport);
-	SDL_RenderPresent(emu_renderer);
-}
-
-static void
-emu_restart(unsigned int soft)
-{
-	screen_resize(WIDTH, HEIGHT);
-	system_reboot(soft);
-	uxn_eval(0x100);
 }
 
 static Uint8
