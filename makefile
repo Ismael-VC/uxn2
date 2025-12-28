@@ -1,7 +1,6 @@
 SDL_CFLAGS := $(shell sdl2-config --cflags)
 SDL_LIBS   := $(shell sdl2-config --libs)
 
-CC_flags=-Wall -Wno-unknown-pragmas
 RELEASE_flags=-DNDEBUG -O2 -g0 -s -L/usr/local/lib 
 DEBUG_flags=-DDEBUG -Wpedantic -Wshadow -Wextra -Werror=implicit-int -Werror=incompatible-pointer-types -Werror=int-conversion -Wvla -g -Og -fsanitize=address -fsanitize=undefined -L/usr/local/lib
 
@@ -10,6 +9,8 @@ PREFIX=${HOME}/.local
 run: bin/uxn2 bin/perifs.rom
 	bin/uxn2 bin/perifs.rom
 test: bin/uxn2-debug tests
+	@ -bin/uxn2-debug
+	@ -bin/uxn2-debug -v
 	@ bin/uxn2-debug bin/opctest.rom
 	@ bin/uxn2-debug bin/system.rom
 	@ echo "foobar" | bin/uxn2-debug bin/console.rom "baz" "qux"
@@ -37,10 +38,10 @@ clean:
 
 bin/uxn2: src/uxn2.c
 	mkdir -p bin
-	cc ${CC_flags} $(SDL_CFLAGS) ${RELEASE_flags} src/uxn2.c -o bin/uxn2 $(SDL_LIBS)
+	cc $(SDL_CFLAGS) ${RELEASE_flags} src/uxn2.c -o bin/uxn2 $(SDL_LIBS)
 bin/uxn2-debug: src/uxn2.c
 	mkdir -p bin
-	cc ${CC_flags} $(SDL_CFLAGS) ${DEBUG_flags} src/uxn2.c -o bin/uxn2-debug $(SDL_LIBS)
+	cc $(SDL_CFLAGS) ${DEBUG_flags} src/uxn2.c -o bin/uxn2-debug $(SDL_LIBS)
 
 # Tools
 
