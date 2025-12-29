@@ -62,6 +62,17 @@ The file device is _sandboxed_, meaning that it should not be able to read or wr
 - `LSHIFT` SEL 
 - `HOME` START
 
+## SDL2
+
+To build this emulator, you must install [SDL2](https://wiki.libsdl.org/) for your distro. If you are using a package manager:
+
+```sh
+sudo pacman -Sy sdl2             # Arch
+sudo apt install libsdl2-dev     # Ubuntu
+sudo xbps-install SDL2-devel     # Void Linux
+brew install sdl2                # OS X
+```
+
 ## Need a hand?
 
 The following resources are a good place to start:
