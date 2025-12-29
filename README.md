@@ -31,6 +31,15 @@ The first parameter is the rom file, the subsequent arguments will be accessible
 bin/uxn2 bin/example.rom arg1 arg2
 ```
 
+## Assembler
+
+This repository comes with a copy of the compiled [Drifblim](https://git.sr.ht/~rabbits/drifblim) assembler. 
+
+```sh
+cat etc/utils/drifblim.rom.txt | bin/uxn11 etc/utils/xh.rom > bin/drifblim.rom
+bin/uxn11 bin/drifblim.rom etc/tests/opctest.tal bin/opctest.rom
+```
+
 ## Devices
 
 The file device is _sandboxed_, meaning that it should not be able to read or write outside of the working directory.
