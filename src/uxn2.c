@@ -133,7 +133,7 @@ static void
 system_print(char *name, int r)
 {
 	Uint8 i;
-	fprintf(stderr, "%s ", name);
+	fprintf(stderr, "%s%c", name, ptr[r] - 8 ? ' ' : '|');
 	for(i = ptr[r] - 8; i != ptr[r]; i++)
 		fprintf(stderr, "%02x%c", stk[r][i], i == 0xff ? '|' : ' ');
 	fprintf(stderr, "<%02x\n", ptr[r]);
