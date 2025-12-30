@@ -27,6 +27,7 @@ grab:
 	cp ../uxn11/etc/tests/* etc/tests/
 archive:
 	cp src/uxn2.c ../oscean/etc/uxn2.c.txt
+	cp etc/tests/audio.tal ../oscean/etc/varvara.audio.tal.txt
 install: bin/uxn2
 	mkdir -p ${PREFIX}/bin
 	cp bin/uxn2 ${PREFIX}/bin

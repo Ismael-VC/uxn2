@@ -3,8 +3,8 @@
 	;on-console #10 DEO2 BRK
 @on-console ( -> )
 	#0417 DEI EQU ?{
-		#12 DEI 
-		LIT "0 SUB DUP #0a LTH ?{ 
+		#12 DEI
+		LIT "0 SUB DUP #0a LTH ?{
 			#27 SUB DUP #10 LTH ?{ POP BRK } }
 		LITr 40 EORr STHkr ?{ ORA #18 DEO BRK }
 		STHkr SFT BRK }
