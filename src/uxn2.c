@@ -406,14 +406,20 @@ screen_draw_pixel(void)
 static void
 screen_draw_sprite(void)
 {
+	int i, x1, x2, y1, y2, ay, by, qy, x = rX, y = rY, layer_mask;
+	int fx, fy, qfx, qfy, dxy, dyx;
 	const Uint8 *table;
 	const int ctrl = dev[0x2f];
 	const int blend = ctrl & 0xf;
 	const int opaque = blend % 5;
-	const int fx = ctrl & 0x10 ? -1 : 1, fy = ctrl & 0x20 ? -1 : 1;
-	const int qfx = fx > 0 ? 7 : 0, qfy = fy < 0 ? 7 : 0;
-	const int dxy = fy * rDX, dyx = fx * rDY;
-	int i, x1, x2, y1, y2, ay, by, qy, x = rX, y = rY, layer_mask;
+	if(ctrl & 0x10)
+		fx = -1, qfx = 0, dyx = -rDY;
+	else
+		fx = 1, qfx = 7, dyx = rDY;
+	if(ctrl & 0x20)
+		fy = -1, qfy = 7, dxy = -rDX;
+	else
+		fy = 1, qfy = 0, dxy = rDX;
 	if(ctrl & 0x40)
 		layer_mask = 0x3, table = blending[blend][1];
 	else
@@ -421,19 +427,17 @@ screen_draw_sprite(void)
 	if(ctrl & 0x80) {
 		const int addr_incr = rMA << 2;
 		for(i = 0; i <= rML; i++, x += dyx, y += dxy, rA += addr_incr) {
-			const Uint16 xmar2 = x + 16, ymar2 = y + 16;
-			if(xmar2 < screen_wmar2 && ymar2 < screen_hmar2) {
+			const Uint16 xmar2 = x + 16, ymar2 = y + 16, xmar = x + 8;
+			if(xmar2 == xmar + 8 && xmar2 < screen_wmar2 && ymar2 < screen_hmar2) {
 				const Uint8 *sprite = &ram[rA];
-				const Uint16 xmar = x + 8, ymar = y + 8;
-				if(xmar2 == xmar + 8) {
-					for(ay = ymar * screen_wmar2, by = ymar2 * screen_wmar2, qy = qfy; ay < by; ay += screen_wmar2, qy += fy) {
-						const int ch1 = sprite[qy], ch2 = sprite[qy + 8] << 1;
-						Uint8 *dst = &screen_layers[xmar + ay];
-						if(opaque) {
-							o2BPP(0) o2BPP(1) o2BPP(2) o2BPP(3) o2BPP(4) o2BPP(5) o2BPP(6) o2BPP(7)
-						} else {
-							a2BPP(0) a2BPP(1) a2BPP(2) a2BPP(3) a2BPP(4) a2BPP(5) a2BPP(6) a2BPP(7)
-						}
+				const Uint16 ymar = y + 8;
+				for(ay = ymar * screen_wmar2, by = ymar2 * screen_wmar2, qy = qfy; ay < by; ay += screen_wmar2, qy += fy) {
+					const int ch1 = sprite[qy], ch2 = sprite[qy + 8] << 1;
+					Uint8 *dst = &screen_layers[xmar + ay];
+					if(opaque) {
+						o2BPP(0) o2BPP(1) o2BPP(2) o2BPP(3) o2BPP(4) o2BPP(5) o2BPP(6) o2BPP(7)
+					} else {
+						a2BPP(0) a2BPP(1) a2BPP(2) a2BPP(3) a2BPP(4) a2BPP(5) a2BPP(6) a2BPP(7)
 					}
 				}
 			}
@@ -441,19 +445,17 @@ screen_draw_sprite(void)
 	} else {
 		const int addr_incr = rMA << 1;
 		for(i = 0; i <= rML; i++, x += dyx, y += dxy, rA += addr_incr) {
-			const Uint16 xmar2 = x + 16, ymar2 = y + 16;
-			if(xmar2 < screen_wmar2 && ymar2 < screen_hmar2) {
+			const Uint16 xmar2 = x + 16, ymar2 = y + 16, xmar = x + 8;
+			if(xmar2 == xmar + 8 && xmar2 < screen_wmar2 && ymar2 < screen_hmar2) {
 				const Uint8 *sprite = &ram[rA];
-				const Uint16 xmar = x + 8, ymar = y + 8;
-				if(xmar2 == xmar + 8) {
-					for(ay = ymar * screen_wmar2, by = ymar2 * screen_wmar2, qy = qfy; ay < by; ay += screen_wmar2, qy += fy) {
-						const int ch1 = sprite[qy];
-						Uint8 *dst = &screen_layers[xmar + ay];
-						if(opaque) {
-							o1BPP(0) o1BPP(1) o1BPP(2) o1BPP(3) o1BPP(4) o1BPP(5) o1BPP(6) o1BPP(7)
-						} else {
-							a1BPP(0) a1BPP(1) a1BPP(2) a1BPP(3) a1BPP(4) a1BPP(5) a1BPP(6) a1BPP(7)
-						}
+				const Uint16 ymar = y + 8;
+				for(ay = ymar * screen_wmar2, by = ymar2 * screen_wmar2, qy = qfy; ay < by; ay += screen_wmar2, qy += fy) {
+					const int ch1 = sprite[qy];
+					Uint8 *dst = &screen_layers[xmar + ay];
+					if(opaque) {
+						o1BPP(0) o1BPP(1) o1BPP(2) o1BPP(3) o1BPP(4) o1BPP(5) o1BPP(6) o1BPP(7)
+					} else {
+						a1BPP(0) a1BPP(1) a1BPP(2) a1BPP(3) a1BPP(4) a1BPP(5) a1BPP(6) a1BPP(7)
 					}
 				}
 			}
