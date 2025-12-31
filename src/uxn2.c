@@ -396,18 +396,27 @@ screen_draw_pixel(void)
 
 /* clang-format off */
 
-#define o1BPP(n) { const int qx = qfx - n * fx; dst[n] = (dst[n] & layer_mask) | table[(ch1 >> qx) & 1]; }
-#define a1BPP(n) { const int qx = qfx - n * fx; const int color = (ch1 >> qx) & 1; if(color) dst[n] = (dst[n] & layer_mask) | table[color]; }
-#define o2BPP(n) { const int qx = qfx - n * fx; dst[n] = (dst[n] & layer_mask) | table[((ch1 >> qx) & 1) | ((ch2 >> qx) & 2)]; }
-#define a2BPP(n) { const int qx = qfx - n * fx; const int color = ((ch1 >> qx) & 1) | ((ch2 >> qx) & 2); if(color) dst[n] = (dst[n] & layer_mask) | table[color]; }
+#define PUT_PIXEL(n, op) if(op | color) dst[n] = (dst[n] & layer_mask) | table[color]; 
+#define GET_COLOR(depth, ch1, ch2, qx) const int color = depth ? (((ch1 >> qx) & 1) | ((ch2 >> qx) & 2)) : (ch1 >> qx) & 1; 
+
+#define PUT_PIXELS(n,op,depth,ch1,ch2, qx) {\
+	{GET_COLOR(depth, ch1, ch2, qx) PUT_PIXEL(0, op); qx -= fx; }\
+	{GET_COLOR(depth, ch1, ch2, qx) PUT_PIXEL(1, op); qx -= fx; }\
+	{GET_COLOR(depth, ch1, ch2, qx) PUT_PIXEL(2, op); qx -= fx; }\
+	{GET_COLOR(depth, ch1, ch2, qx) PUT_PIXEL(3, op); qx -= fx; }\
+	{GET_COLOR(depth, ch1, ch2, qx) PUT_PIXEL(4, op); qx -= fx; }\
+	{GET_COLOR(depth, ch1, ch2, qx) PUT_PIXEL(5, op); qx -= fx; }\
+	{GET_COLOR(depth, ch1, ch2, qx) PUT_PIXEL(6, op); qx -= fx; }\
+	{GET_COLOR(depth, ch1, ch2, qx) PUT_PIXEL(7, op); qx -= fx; }\
+}
 
 /* clang-format on */
 
 static void
 screen_draw_sprite(void)
 {
-	int i, x1, x2, y1, y2, ay, by, qy, x = rX, y = rY, layer_mask;
-	int fx, fy, qfx, qfy, dxy, dyx;
+	int i, qy, x = rX, y = rY, layer_mask;
+	int fx, fy, qfx, qfy, dxy, dyx, row;
 	const Uint8 *table;
 	const int ctrl = dev[0x2f];
 	const int blend = ctrl & 0xf;
@@ -431,14 +440,15 @@ screen_draw_sprite(void)
 			if(xmar2 == xmar + 8 && xmar2 < screen_wmar2 && ymar2 < screen_hmar2) {
 				const Uint8 *sprite = &ram[rA];
 				const Uint16 ymar = y + 8;
-				for(ay = ymar * screen_wmar2, by = ymar2 * screen_wmar2, qy = qfy; ay < by; ay += screen_wmar2, qy += fy) {
+				const int height = ymar2 - ymar;
+				Uint8 *dst = &screen_layers[xmar + ymar * screen_wmar2];
+				for(row = 0, qy = qfy; row < height; row++, dst += screen_wmar2, qy += fy) {
 					const int ch1 = sprite[qy], ch2 = sprite[qy + 8] << 1;
-					Uint8 *dst = &screen_layers[xmar + ay];
-					if(opaque) {
-						o2BPP(0) o2BPP(1) o2BPP(2) o2BPP(3) o2BPP(4) o2BPP(5) o2BPP(6) o2BPP(7)
-					} else {
-						a2BPP(0) a2BPP(1) a2BPP(2) a2BPP(3) a2BPP(4) a2BPP(5) a2BPP(6) a2BPP(7)
-					}
+					int qx = qfx;
+					if(opaque)
+						PUT_PIXELS(n, 1, 1, ch1, ch2, qx)
+					else
+						PUT_PIXELS(n, 0, 1, ch1, ch2, qx)
 				}
 			}
 		}
@@ -449,27 +459,31 @@ screen_draw_sprite(void)
 			if(xmar2 == xmar + 8 && xmar2 < screen_wmar2 && ymar2 < screen_hmar2) {
 				const Uint8 *sprite = &ram[rA];
 				const Uint16 ymar = y + 8;
-				for(ay = ymar * screen_wmar2, by = ymar2 * screen_wmar2, qy = qfy; ay < by; ay += screen_wmar2, qy += fy) {
+				const int height = ymar2 - ymar;
+				Uint8 *dst = &screen_layers[xmar + ymar * screen_wmar2];
+				for(row = 0, qy = qfy; row < height; row++, dst += screen_wmar2, qy += fy) {
 					const int ch1 = sprite[qy];
-					Uint8 *dst = &screen_layers[xmar + ay];
-					if(opaque) {
-						o1BPP(0) o1BPP(1) o1BPP(2) o1BPP(3) o1BPP(4) o1BPP(5) o1BPP(6) o1BPP(7)
-					} else {
-						a1BPP(0) a1BPP(1) a1BPP(2) a1BPP(3) a1BPP(4) a1BPP(5) a1BPP(6) a1BPP(7)
-					}
+					int qx = qfx;
+					if(opaque)
+						PUT_PIXELS(n, 1, 0, ch1, 0, qx)
+					else
+						PUT_PIXELS(n, 0, 0, ch1, 0, qx)
 				}
 			}
 		}
 	}
-	if(fx < 0)
-		x1 = x, x2 = rX;
-	else
-		x1 = rX, x2 = x;
-	if(fy < 0)
-		y1 = y, y2 = rY;
-	else
-		y1 = rY, y2 = y;
-	if(!screen_reqdraw) screen_change(x1 - 8, y1 - 8, x2 + 8, y2 + 8);
+	if(!screen_reqdraw) {
+		int x1, x2, y1, y2;
+		if(fx < 0)
+			x1 = x, x2 = rX;
+		else
+			x1 = rX, x2 = x;
+		if(fy < 0)
+			y1 = y, y2 = rY;
+		else
+			y1 = rY, y2 = y;
+		screen_change(x1 - 8, y1 - 8, x2 + 8, y2 + 8);
+	}
 	if(rMX) rX += rDX * fx;
 	if(rMY) rY += rDY * fy;
 }
