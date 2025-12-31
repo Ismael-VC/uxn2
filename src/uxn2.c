@@ -397,7 +397,7 @@ screen_draw_pixel(void)
 /* clang-format off */
 
 #define PUT_PIXEL(n, op) if(op | color) dst[n] = (dst[n] & layer_mask) | table[color]; 
-#define GET_COLOR(depth, ch1, ch2, qx) const int color = depth ? (((ch1 >> qx) & 1) | ((ch2 >> qx) & 2)) : (ch1 >> qx) & 1; 
+#define GET_COLOR(depth, ch1, ch2, qx)  const int color = depth ? (((ch1 >> qx) & 1) | ((ch2 >> qx) & 2)) : (ch1 >> qx) & 1; 
 
 #define PUT_PIXELS(n,op,depth,ch1,ch2, qx) {\
 	{GET_COLOR(depth, ch1, ch2, qx) PUT_PIXEL(0, op); qx -= fx; }\
@@ -438,12 +438,12 @@ screen_draw_sprite(void)
 		for(i = 0; i <= rML; i++, x += dyx, y += dxy, rA += addr_incr) {
 			const Uint16 xmar2 = x + 16, ymar2 = y + 16, xmar = x + 8;
 			if(xmar2 == xmar + 8 && xmar2 < screen_wmar2 && ymar2 < screen_hmar2) {
-				const Uint8 *sprite = &ram[rA];
 				const Uint16 ymar = y + 8;
 				const int height = ymar2 - ymar;
 				Uint8 *dst = &screen_layers[xmar + ymar * screen_wmar2];
-				for(row = 0, qy = qfy; row < height; row++, dst += screen_wmar2, qy += fy) {
-					const int ch1 = sprite[qy], ch2 = sprite[qy + 8] << 1;
+				Uint8 *sch1 = &ram[rA + qfy], *sch2 = sch1 + 8;
+				for(row = 0; row < height; row++, dst += screen_wmar2, sch1 += fy, sch2 += fy) {
+					const int ch1 = *sch1, ch2 = *sch2 << 1;
 					int qx = qfx;
 					if(opaque)
 						PUT_PIXELS(n, 1, 1, ch1, ch2, qx)
@@ -457,12 +457,12 @@ screen_draw_sprite(void)
 		for(i = 0; i <= rML; i++, x += dyx, y += dxy, rA += addr_incr) {
 			const Uint16 xmar2 = x + 16, ymar2 = y + 16, xmar = x + 8;
 			if(xmar2 == xmar + 8 && xmar2 < screen_wmar2 && ymar2 < screen_hmar2) {
-				const Uint8 *sprite = &ram[rA];
 				const Uint16 ymar = y + 8;
 				const int height = ymar2 - ymar;
 				Uint8 *dst = &screen_layers[xmar + ymar * screen_wmar2];
-				for(row = 0, qy = qfy; row < height; row++, dst += screen_wmar2, qy += fy) {
-					const int ch1 = sprite[qy];
+				Uint8 *sch1 = &ram[rA + qfy];
+				for(row = 0; row < height; row++, dst += screen_wmar2, sch1 += fy) {
+					const int ch1 = *sch1;
 					int qx = qfx;
 					if(opaque)
 						PUT_PIXELS(n, 1, 0, ch1, 0, qx)
