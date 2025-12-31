@@ -396,18 +396,20 @@ screen_draw_pixel(void)
 
 /* clang-format off */
 
-#define PUT_PIXEL(n, op) if(op | color) dst[n] = (dst[n] & layer_mask) | table[color]; 
-#define GET_COLOR(depth, ch1, ch2, qx)  const int color = depth ? (((ch1 >> qx) & 1) | ((ch2 >> qx) & 2)) : (ch1 >> qx) & 1; 
+/* clang-format off */
 
-#define PUT_PIXELS(n,op,depth,ch1,ch2, qx) {\
-	{GET_COLOR(depth, ch1, ch2, qx) PUT_PIXEL(0, op); qx -= fx; }\
-	{GET_COLOR(depth, ch1, ch2, qx) PUT_PIXEL(1, op); qx -= fx; }\
-	{GET_COLOR(depth, ch1, ch2, qx) PUT_PIXEL(2, op); qx -= fx; }\
-	{GET_COLOR(depth, ch1, ch2, qx) PUT_PIXEL(3, op); qx -= fx; }\
-	{GET_COLOR(depth, ch1, ch2, qx) PUT_PIXEL(4, op); qx -= fx; }\
-	{GET_COLOR(depth, ch1, ch2, qx) PUT_PIXEL(5, op); qx -= fx; }\
-	{GET_COLOR(depth, ch1, ch2, qx) PUT_PIXEL(6, op); qx -= fx; }\
-	{GET_COLOR(depth, ch1, ch2, qx) PUT_PIXEL(7, op); qx -= fx; }\
+#define PUT_PIXEL(n, op) if(op | color) dst[n] = (dst[n] & layer_mask) | table[color]; 
+#define GET_COLOR(depth) const int color = depth ? (((ch1 >> qx) & 1) | ((ch2 >> qx) & 2)) : (ch1 >> qx) & 1; 
+
+#define PUT_PIXELS(n,op,depth) {\
+	{GET_COLOR(depth) PUT_PIXEL(0, op); qx -= fx; }\
+	{GET_COLOR(depth) PUT_PIXEL(1, op); qx -= fx; }\
+	{GET_COLOR(depth) PUT_PIXEL(2, op); qx -= fx; }\
+	{GET_COLOR(depth) PUT_PIXEL(3, op); qx -= fx; }\
+	{GET_COLOR(depth) PUT_PIXEL(4, op); qx -= fx; }\
+	{GET_COLOR(depth) PUT_PIXEL(5, op); qx -= fx; }\
+	{GET_COLOR(depth) PUT_PIXEL(6, op); qx -= fx; }\
+	{GET_COLOR(depth) PUT_PIXEL(7, op); qx -= fx; }\
 }
 
 /* clang-format on */
@@ -444,9 +446,9 @@ screen_draw_sprite(void)
 					const int ch1 = *sch1, ch2 = *sch2 << 1;
 					int qx = qfx;
 					if(opaque)
-						PUT_PIXELS(n, 1, 1, ch1, ch2, qx)
+						PUT_PIXELS(n, 1, 1)
 					else
-						PUT_PIXELS(n, 0, 1, ch1, ch2, qx)
+						PUT_PIXELS(n, 0, 1)
 				}
 			}
 		}
@@ -458,12 +460,12 @@ screen_draw_sprite(void)
 				Uint8 *dst = &screen_layers[xmar + ymar * screen_wmar2];
 				Uint8 *sch1 = &ram[rA + qfy];
 				for(row = 0; row < 8; row++, dst += screen_wmar2, sch1 += fy) {
-					const int ch1 = *sch1;
+					const int ch1 = *sch1, ch2 = 0;
 					int qx = qfx;
 					if(opaque)
-						PUT_PIXELS(n, 1, 0, ch1, 0, qx)
+						PUT_PIXELS(n, 1, 0)
 					else
-						PUT_PIXELS(n, 0, 0, ch1, 0, qx)
+						PUT_PIXELS(n, 0, 0)
 				}
 			}
 		}
