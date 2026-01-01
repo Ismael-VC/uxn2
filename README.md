@@ -23,6 +23,16 @@ You can run `make install` to build and install the files. By default, files are
 $ make PREFIX=/opt/uxn install
 ```
 
+### Plan 9
+
+If you're on plan 9.
+
+```sh
+cd src/
+cc -p -I/sys/include/npe -I /sys/include/npe/SDL2/ uxn2.c
+6l -o uxn2 uxn2.6
+```
+
 ## Usage
 
 The first parameter is the rom file, the subsequent arguments will be accessible to the rom, via the [Console vector](https://wiki.xxiivv.com/site/varvara.html#console).
