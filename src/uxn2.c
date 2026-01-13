@@ -227,6 +227,16 @@ console_input(int c, unsigned int type)
 	return type != CONSOLE_END;
 }
 
+/* clang-format off */
+
+static void console_deo_vector(void) { console_vector = PEEK2(&dev[0x10]); }
+static void console_deo_stdout(void) { fputc(dev[0x18], stdout), fflush(stdout); }
+static void console_deo_stderr(void) { fputc(dev[0x19], stderr), fflush(stderr); }
+static void console_deo_hb(void) { fprintf(stderr, "%02x", dev[0x1a]); }
+static void console_deo_lb(void) { fprintf(stderr, "%02x", dev[0x1b]); }
+
+/* clang-format on */
+
 /*
 @|Screen ------------------------------------------------------------ */
 
@@ -628,6 +638,10 @@ static Uint8 audio_get_vu0(void) { return audio_get_vu(0); }
 static Uint8 audio_get_vu1(void) { return audio_get_vu(1); }
 static Uint8 audio_get_vu2(void) { return audio_get_vu(2); }
 static Uint8 audio_get_vu3(void) { return audio_get_vu(3); }
+static void audio_play0(void) { audio_play(0, &dev[0x30]); }
+static void audio_play1(void) { audio_play(1, &dev[0x40]); }
+static void audio_play2(void) { audio_play(2, &dev[0x50]); }
+static void audio_play3(void) { audio_play(3, &dev[0x60]); }
 
 /* clang-format on */
 
@@ -662,6 +676,12 @@ controller_key(Uint8 key)
 		if(controller_vector) uxn_eval(controller_vector);
 		dev[0x83] = 0;
 	}
+}
+
+void
+controller_deo_vector(void)
+{
+	controller_vector = PEEK2(&dev[0x80]);
 }
 
 /*
@@ -699,6 +719,12 @@ mouse_scroll(Uint16 x, Uint16 y)
 	if(mouse_vector) uxn_eval(mouse_vector);
 	dev[0x9a] = 0, dev[0x9b] = 0;
 	dev[0x9c] = 0, dev[0x9d] = 0;
+}
+
+void
+mouse_deo_vector(void)
+{
+	mouse_vector = PEEK2(&dev[0x90]);
 }
 
 /*
@@ -941,6 +967,23 @@ file_success(unsigned int port, unsigned int value)
 	dev[port] = value >> 8, dev[port + 1] = value;
 }
 
+/* clang-format off */
+
+static void filea_deo_vector(void) { rL1 = PEEK2(&dev[0xaa]); }
+static void filea_deo_stat(void) { file_success(0xa2, file_stat(0, PEEK2(&dev[0xa4]), rL1)); }
+static void filea_deo_delete(void) { file_success(0xa2, file_delete(0)); }
+static void filea_deo_name(void) { file_success(0xa2, file_init(0, PEEK2(&dev[0xa8]))); }
+static void filea_deo_read(void) { file_success(0xa2, file_read(0, PEEK2(&dev[0xac]), rL1)); }
+static void filea_deo_write(void) { file_success(0xa2, file_write(0, PEEK2(&dev[0xae]), rL1, dev[0xa7])); }
+static void fileb_deo_vector(void) { rL2 = PEEK2(&dev[0xba]); }
+static void fileb_deo_stat(void) { file_success(0xb2, file_stat(1, PEEK2(&dev[0xb4]), rL2)); }
+static void fileb_deo_delete(void) { file_success(0xb2, file_delete(1)); }
+static void fileb_deo_name(void) { file_success(0xb2, file_init(1, PEEK2(&dev[0xb8]))); }
+static void fileb_deo_read(void) { file_success(0xb2, file_read(1, PEEK2(&dev[0xbc]), rL2)); }
+static void fileb_deo_write(void) { file_success(0xb2, file_write(1, PEEK2(&dev[0xbe]), rL2, dev[0xb7])); }
+
+/* clang-format on */
+
 /*
 @|Datetime ---------------------------------------------------------- */
 
@@ -1011,6 +1054,53 @@ static const dei_handler dei_handlers[256] = {
 	[0xca] = datetime_dei_dst,
 };
 
+static const deo_handler deo_handlers[256] = {
+	[0x03] = system_deo_expansion,
+	[0x04] = system_deo_wst,
+	[0x05] = system_deo_rst,
+	[0x08] = system_deo_colorize,
+	[0x09] = system_deo_colorize,
+	[0x0a] = system_deo_colorize,
+	[0x0b] = system_deo_colorize,
+	[0x0c] = system_deo_colorize,
+	[0x0d] = system_deo_colorize,
+	[0x0e] = system_deo_print,
+	[0x11] = console_deo_vector,
+	[0x18] = console_deo_stdout,
+	[0x19] = console_deo_stderr,
+	[0x1a] = console_deo_hb,
+	[0x1b] = console_deo_lb,
+	[0x21] = screen_deo_vector,
+	[0x23] = screen_deo_width,
+	[0x25] = screen_deo_height,
+	[0x26] = screen_deo_auto,
+	[0x28] = screen_deo_x,
+	[0x29] = screen_deo_x,
+	[0x2a] = screen_deo_y,
+	[0x2b] = screen_deo_y,
+	[0x2c] = screen_deo_addr,
+	[0x2d] = screen_deo_addr,
+	[0x2e] = screen_deo_pixel,
+	[0x2f] = screen_deo_sprite,
+	[0x3f] = audio_play0,
+	[0x4f] = audio_play1,
+	[0x5f] = audio_play2,
+	[0x6f] = audio_play3,
+	[0x81] = controller_deo_vector,
+	[0x91] = mouse_deo_vector,
+	[0xab] = filea_deo_vector,
+	[0xa5] = filea_deo_stat,
+	[0xa6] = filea_deo_delete,
+	[0xa9] = filea_deo_name,
+	[0xad] = filea_deo_read,
+	[0xaf] = filea_deo_write,
+	[0xbb] = fileb_deo_vector,
+	[0xb5] = fileb_deo_stat,
+	[0xb6] = fileb_deo_delete,
+	[0xb9] = fileb_deo_name,
+	[0xbd] = fileb_deo_read,
+	[0xbf] = fileb_deo_write};
+
 Uint8
 emu_dei(const Uint8 port)
 {
@@ -1019,64 +1109,10 @@ emu_dei(const Uint8 port)
 }
 
 void
-emu_deo(Uint8 addr, Uint8 value)
+emu_deo(const Uint8 port, const Uint8 value)
 {
-	dev[addr] = value;
-	switch(addr) {
-	/* System */
-	case 0x03: system_deo_expansion(); return;
-	case 0x04: ptr[0] = dev[4]; return;
-	case 0x05: ptr[1] = dev[5]; return;
-	case 0x08:
-	case 0x09:
-	case 0x0a:
-	case 0x0b:
-	case 0x0c:
-	case 0x0d: system_deo_colorize(); return;
-	case 0x0e: system_print("WST", 0), system_print("RST", 1); return;
-	/* Console */
-	case 0x11: console_vector = PEEK2(&dev[0x10]); return;
-	case 0x18: fputc(dev[0x18], stdout), fflush(stdout); return;
-	case 0x19: fputc(dev[0x19], stderr), fflush(stderr); return;
-	case 0x1a: fprintf(stderr, "%02x", dev[0x1a]); return;
-	case 0x1b: fprintf(stderr, "%02x", dev[0x1b]); return;
-	/* Screen */
-	case 0x21: screen_vector = PEEK2(&dev[0x20]); return;
-	case 0x23: screen_resize(PEEK2(&dev[0x22]) & 0xfff, screen_height & 0xfff); return;
-	case 0x25: screen_resize(screen_width & 0xfff, PEEK2(&dev[0x24]) & 0xfff); return;
-	case 0x26: rMX = dev[0x26] & 0x1, rMY = dev[0x26] & 0x2, rMA = dev[0x26] & 0x4, rML = dev[0x26] >> 4, rDX = rMX << 3, rDY = rMY << 2; return;
-	case 0x28:
-	case 0x29: rX = (dev[0x28] << 8) | dev[0x29], rX = TWOS(rX); return;
-	case 0x2a:
-	case 0x2b: rY = (dev[0x2a] << 8) | dev[0x2b], rY = TWOS(rY); return;
-	case 0x2c:
-	case 0x2d: rA = (dev[0x2c] << 8) | dev[0x2d]; return;
-	case 0x2e: screen_deo_pixel(); return;
-	case 0x2f: screen_deo_sprite(); return;
-	/* Audio */
-	case 0x3f: audio_play(0, &dev[addr & 0xf0]); return;
-	case 0x4f: audio_play(1, &dev[addr & 0xf0]); return;
-	case 0x5f: audio_play(2, &dev[addr & 0xf0]); return;
-	case 0x6f: audio_play(3, &dev[addr & 0xf0]); return;
-	/* Controller */
-	case 0x81: controller_vector = PEEK2(&dev[0x80]); return;
-	/* Mouse */
-	case 0x91: mouse_vector = PEEK2(&dev[0x90]); return;
-	/* File 1 */
-	case 0xab: rL1 = PEEK2(&dev[0xaa]); break;
-	case 0xa5: file_success(0xa2, file_stat(0, PEEK2(&dev[0xa4]), rL1)); break;
-	case 0xa6: file_success(0xa2, file_delete(0)); break;
-	case 0xa9: file_success(0xa2, file_init(0, PEEK2(&dev[0xa8]))); break;
-	case 0xad: file_success(0xa2, file_read(0, PEEK2(&dev[0xac]), rL1)); break;
-	case 0xaf: file_success(0xa2, file_write(0, PEEK2(&dev[0xae]), rL1, dev[0xa7])); break;
-	/* File 2 */
-	case 0xbb: rL2 = PEEK2(&dev[0xba]); break;
-	case 0xb5: file_success(0xb2, file_stat(1, PEEK2(&dev[0xb4]), rL2)); break;
-	case 0xb6: file_success(0xb2, file_delete(1)); break;
-	case 0xb9: file_success(0xb2, file_init(1, PEEK2(&dev[0xb8]))); break;
-	case 0xbd: file_success(0xb2, file_read(1, PEEK2(&dev[0xbc]), rL2)); break;
-	case 0xbf: file_success(0xb2, file_write(1, PEEK2(&dev[0xbe]), rL2, dev[0xb7])); break;
-	}
+	dev[port] = value;
+	if(deo_handlers[port]) deo_handlers[port]();
 }
 
 void
