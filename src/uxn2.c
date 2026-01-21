@@ -25,20 +25,23 @@ cc -I/usr/include/SDL2 -DNDEBUG -O2 -g0 -s -lSDL2 src/uxn2.c -o bin/uxn2
 	$(sdl2-config --cflags --libs)
 */
 
+typedef void (*deo_handler)(void);
+typedef Uint8 (*dei_handler)(void);
+
+static Uint8 *ram, dev[0x100], ptr[2], stk[2][0x100];
+static unsigned int uxn_eval(Uint16 pc);
+
+/* clang-format off */
+
 #define BANKS 0x10
 #define BANKS_CAP BANKS * 0x10000
 #define WIDTH (64 * 8)
 #define HEIGHT (40 * 8)
 #define TWOS(v) (v & 0x8000 ? (int)v - 0x10000 : (int)v)
 #define PEEK2(d) (*(d) << 8 | (d)[1])
-#define POKE2(d, v) { *(d) = (v) >> 8; (d)[1] = (v); }
 #define CLAMP(v, a, b) { if(v < a) v = a; else if(v >= b) v = b; }
 
-typedef void (*deo_handler)(void);
-typedef Uint8 (*dei_handler)(void);
-
-static Uint8 *ram, dev[0x100], ptr[2], stk[2][0x100];
-static unsigned int uxn_eval(Uint16 pc);
+/* clang-format on */
 
 /*
 @|System ------------------------------------------------------------ */
@@ -100,9 +103,8 @@ system_deo_expansion(void)
 	unsigned int bank = PEEK2(aptr + 3) * 0x10000;
 	unsigned int addr = PEEK2(aptr + 5);
 	if(ram[exp] == 0x0) {
-		unsigned int dst_value = ram[exp + 7];
 		if(bank < BANKS_CAP)
-			memset(ram + bank + addr, dst_value, length);
+			memset(ram + bank + addr, ram[exp + 7], length);
 	} else if(ram[exp] == 1 || ram[exp] == 2) {
 		unsigned int dst_bank = PEEK2(aptr + 7) * 0x10000;
 		unsigned int dst_addr = PEEK2(aptr + 9);
@@ -1035,83 +1037,73 @@ emu_deo(const Uint8 port, const Uint8 value)
 /*
 @|Uxn --------------------------------------------------------------- */
 
-#define REM *sp -= 1 + _2;
-#define DEC s[--(*sp)]
-#define INC s[(*sp)++]
-#define MOV { if(_2) pc = a; else pc += (signed char)a; }
-#define JMP(x) { c = ram[pc] << 8, c |= ram[pc+1]; pc += x + 2; }
-#define STK(m) Uint8 *s = stk[m], *sp = &ptr[m];
-#define PO1(o) o = DEC;
-#define PO2(o) { PO1(o) o |= DEC << 8; }
-#define POx(o) { PO1(o) if(_2) o |= DEC << 8; }
-#define RP1(i) stk[!_r][ptr[!_r]++] = i;
-#define PU1(i) INC = i;
-#define PUx(i) c = (i); if(_2) PU1(c >> 8) PU1(c)
-#define GOT(o) if(_2) PO1(o[1]) PO1(o[0])
-#define PUT(i) PU1(i[0]) if(_2) PU1(i[1])
-#define DEO(o,r) emu_deo(o, r[0]); if(_2) emu_deo(o + 1, r[1]);
-#define DEI(i,r) r[0] = emu_dei(i); if(_2) r[1] = emu_dei(i + 1); PUT(r)
-#define POK(o,r,m) ram[o] = r[0]; if(_2) ram[(o + 1) & m] = r[1];
-#define PEK(i,r,m) r[0] = ram[i]; if(_2) r[1] = ram[(i + 1) & m]; PUT(r)
-
 #define OPC(opc, A, B) {\
-	case 0x00|opc: {const int _2=0,_r=0;STK(_r)A B} goto step;\
-	case 0x20|opc: {const int _2=1,_r=0;STK(_r)A B} goto step;\
-	case 0x40|opc: {const int _2=0,_r=1;STK(_r)A B} goto step;\
-	case 0x60|opc: {const int _2=1,_r=1;STK(_r)A B} goto step;\
-	case 0x80|opc: {const int _2=0,_r=0;STK(_r)int k=*sp;A *sp=k;B} goto step;\
-	case 0xa0|opc: {const int _2=1,_r=0;STK(_r)int k=*sp;A *sp=k;B} goto step;\
-	case 0xc0|opc: {const int _2=0,_r=1;STK(_r)int k=*sp;A *sp=k;B} goto step;\
-	case 0xe0|opc: {const int _2=1,_r=1;STK(_r)int k=*sp;A *sp=k;B} goto step; }
+	case 0x00|opc:case 0x40|opc:{const int d=0;A B} goto step;\
+	case 0x20|opc:case 0x60|opc:{const int d=1;A B} goto step;\
+	case 0x80|opc:case 0xc0|opc:{const int d=0,k=*p;A *p=k;B} goto step;\
+	case 0xa0|opc:case 0xe0|opc:{const int d=1,k=*p;A *p=k;B} goto step;}
+#define REM *p -= 1 + d;
+#define DEC s[--(*p)]
+#define INC s[(*p)++]
+#define FLIP { s = stk[!r], p = &ptr[!r]; }
+#define MOVE { pc = d ? a : pc + (signed char)a; }
+#define JUMP(x) { c = ram[pc] << 8, c |= ram[pc + 1]; pc += x + 2; }
+#define DROP(o,m) { o = DEC; if(m) o |= DEC << 8; }
+#define GRAB(o) if(d) o[1] = DEC; o[0] = DEC;
+#define PUSH(i,m) { if(m) c = (i), INC = c >> 8, INC = c; else INC = i; }
+#define TAKE(i) INC = i[0]; if(d) INC = i[1];
+#define DEVO(o,r) emu_deo(o, r[0]); if(d) emu_deo(o + 1, r[1]);
+#define DEVI(i,r) r[0] = emu_dei(i); if(d) r[1] = emu_dei(i + 1);
+#define POKE(o,r,m) ram[o] = r[0]; if(d) ram[(o + 1) & m] = r[1];
+#define PEEK(i,r,m) r[0] = ram[i]; if(d) r[1] = ram[(i + 1) & m];
 
-
-static unsigned int
+static unsigned
 uxn_eval(Uint16 pc)
 {
 	Uint16 a, b, c, x[2], y[2], z[2];
-step:
-	switch(ram[pc++]) {
-	/* BRK */ case 0x00: return 1;
-	/* JCI */ case 0x20: if(stk[0][--ptr[0]]) JMP(c) else pc += 2; goto step;
-	/* JMI */ case 0x40: JMP(c) goto step;
-	/* JSI */ case 0x60: { STK(1) JMP(0) INC = pc >> 8; INC = pc; pc += c; } goto step;
-	/* LI2 */ case 0xa0: { STK(0) INC = ram[pc++]; INC = ram[pc++]; } goto step;
-	/* LIT */ case 0x80: { stk[0][ptr[0]++] = ram[pc++]; } goto step;
-	/* L2r */ case 0xe0: { STK(1) INC = ram[pc++]; INC = ram[pc++]; } goto step;
-	/* LIr */ case 0xc0: { stk[1][ptr[1]++] = ram[pc++]; } goto step;
-	/* INC */ OPC(0x01,POx(a),PUx(a + 1))
+step: {
+	Uint8 op = ram[pc++], r = (op >> 6) & 1, *s = stk[r], *p = &ptr[r];
+	switch(op) {
+	/* BRK */ case 0x00:return 1;
+	/* JCI */ case 0x20:if(DEC) JUMP(c) else pc += 2; goto step;
+	/* JMI */ case 0x40:JUMP(c) goto step;
+	/* JSI */ case 0x60:JUMP(0) INC = pc >> 8; INC = pc; pc += c; goto step;
+	/* LI2 */ case 0xa0:INC = ram[pc++]; /* Fall-through */
+	/* LIT */ case 0x80:INC = ram[pc++]; goto step;
+	/* L2r */ case 0xe0:INC = ram[pc++]; /* Fall-through */
+	/* LIr */ case 0xc0:INC = ram[pc++]; goto step;
+	/* INC */ OPC(0x01,DROP(a,d),PUSH(a + 1,d))
 	/* POP */ OPC(0x02,REM,(void)s;)
-	/* NIP */ OPC(0x03,GOT(x) REM,PUT(x))
-	/* SWP */ OPC(0x04,GOT(x) GOT(y),PUT(x) PUT(y))
-	/* ROT */ OPC(0x05,GOT(x) GOT(y) GOT(z),PUT(y) PUT(x) PUT(z))
-	/* DUP */ OPC(0x06,GOT(x),PUT(x) PUT(x))
-	/* OVR */ OPC(0x07,GOT(x) GOT(y),PUT(y) PUT(x) PUT(y))
-	/* EQU */ OPC(0x08,POx(a) POx(b),PU1(b == a))
-	/* NEQ */ OPC(0x09,POx(a) POx(b),PU1(b != a))
-	/* GTH */ OPC(0x0a,POx(a) POx(b),PU1(b > a))
-	/* LTH */ OPC(0x0b,POx(a) POx(b),PU1(b < a))
-	/* JMP */ OPC(0x0c,POx(a),MOV)
-	/* JCN */ OPC(0x0d,POx(a) PO1(b),if(b) MOV)
-	/* JSR */ OPC(0x0e,POx(a),RP1(pc >> 8) RP1(pc) MOV)
-	/* STH */ OPC(0x0f,GOT(x),RP1(x[0]) if(_2) RP1(x[1]))
-	/* LDZ */ OPC(0x10,PO1(a),PEK(a, x, 0xff))
-	/* STZ */ OPC(0x11,PO1(a) GOT(y),POK(a, y, 0xff))
-	/* LDR */ OPC(0x12,PO1(a),PEK(pc + (signed char)a, x, 0xffff))
-	/* STR */ OPC(0x13,PO1(a) GOT(y),POK(pc + (signed char)a, y, 0xffff))
-	/* LDA */ OPC(0x14,PO2(a),PEK(a, x, 0xffff))
-	/* STA */ OPC(0x15,PO2(a) GOT(y),POK(a, y, 0xffff))
-	/* DEI */ OPC(0x16,PO1(a),DEI(a, x))
-	/* DEO */ OPC(0x17,PO1(a) GOT(y),DEO(a, y))
-	/* ADD */ OPC(0x18,POx(a) POx(b),PUx(b + a))
-	/* SUB */ OPC(0x19,POx(a) POx(b),PUx(b - a))
-	/* MUL */ OPC(0x1a,POx(a) POx(b),PUx(b * a))
-	/* DIV */ OPC(0x1b,POx(a) POx(b),PUx(a ? b / a : 0))
-	/* AND */ OPC(0x1c,POx(a) POx(b),PUx(b & a))
-	/* ORA */ OPC(0x1d,POx(a) POx(b),PUx(b | a))
-	/* EOR */ OPC(0x1e,POx(a) POx(b),PUx(b ^ a))
-	/* SFT */ OPC(0x1f,PO1(a) POx(b),PUx(b >> (a & 0xf) << (a >> 4)))
-	}
-	return 0;
+	/* NIP */ OPC(0x03,GRAB(x) REM,TAKE(x))
+	/* SWP */ OPC(0x04,GRAB(x) GRAB(y),TAKE(x) TAKE(y))
+	/* ROT */ OPC(0x05,GRAB(x) GRAB(y) GRAB(z),TAKE(y) TAKE(x) TAKE(z))
+	/* DUP */ OPC(0x06,GRAB(x),TAKE(x) TAKE(x))
+	/* OVR */ OPC(0x07,GRAB(x) GRAB(y),TAKE(y) TAKE(x) TAKE(y))
+	/* EQU */ OPC(0x08,DROP(a,d) DROP(b,d),PUSH(b == a,0))
+	/* NEQ */ OPC(0x09,DROP(a,d) DROP(b,d),PUSH(b != a,0))
+	/* GTH */ OPC(0x0a,DROP(a,d) DROP(b,d),PUSH(b > a,0))
+	/* LTH */ OPC(0x0b,DROP(a,d) DROP(b,d),PUSH(b < a,0))
+	/* JMP */ OPC(0x0c,DROP(a,d),MOVE)
+	/* JCN */ OPC(0x0d,DROP(a,d) DROP(b,0),if(b) MOVE)
+	/* JSR */ OPC(0x0e,DROP(a,d),FLIP PUSH(pc,1) MOVE)
+	/* STH */ OPC(0x0f,GRAB(x),FLIP PUSH(x[0],0) if(d) PUSH(x[1],0))
+	/* LDZ */ OPC(0x10,DROP(a,0),PEEK(a, x, 0xff) TAKE(x))
+	/* STZ */ OPC(0x11,DROP(a,0) GRAB(y),POKE(a, y, 0xff))
+	/* LDR */ OPC(0x12,DROP(a,0),PEEK(pc + (signed char)a, x, 0xffff) TAKE(x))
+	/* STR */ OPC(0x13,DROP(a,0) GRAB(y),POKE(pc + (signed char)a, y, 0xffff))
+	/* LDA */ OPC(0x14,DROP(a,1),PEEK(a, x, 0xffff) TAKE(x))
+	/* STA */ OPC(0x15,DROP(a,1) GRAB(y),POKE(a, y, 0xffff))
+	/* DEI */ OPC(0x16,DROP(a,0),DEVI(a, x) TAKE(x))
+	/* DEO */ OPC(0x17,DROP(a,0) GRAB(y),DEVO(a, y))
+	/* ADD */ OPC(0x18,DROP(a,d) DROP(b,d),PUSH(b + a,d))
+	/* SUB */ OPC(0x19,DROP(a,d) DROP(b,d),PUSH(b - a,d))
+	/* MUL */ OPC(0x1a,DROP(a,d) DROP(b,d),PUSH(b * a,d))
+	/* DIV */ OPC(0x1b,DROP(a,d) DROP(b,d),PUSH(a ? b / a : 0,d))
+	/* AND */ OPC(0x1c,DROP(a,d) DROP(b,d),PUSH(b & a,d))
+	/* ORA */ OPC(0x1d,DROP(a,d) DROP(b,d),PUSH(b | a,d))
+	/* EOR */ OPC(0x1e,DROP(a,d) DROP(b,d),PUSH(b ^ a,d))
+	/* SFT */ OPC(0x1f,DROP(a,0) DROP(b,d),PUSH(b >> (a & 0xf) << (a >> 4),d))
+	}} return 0;
 }
 
 /* clang-format on */
