@@ -1258,11 +1258,7 @@ emu_event(void)
 			uxn_eval(port_value[0] << 8 | port_value[1]);
 		}
 		/* Controller */
-		else if(event.type == SDL_TEXTINPUT) {
-			char *c;
-			for(c = event.text.text; *c; c++)
-				controller_key(*c);
-		} else if(event.type == SDL_KEYDOWN) {
+		else if(event.type == SDL_KEYDOWN) {
 			int ksym;
 			if(get_key(&event))
 				controller_key(get_key(&event));
