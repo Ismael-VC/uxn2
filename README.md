@@ -33,6 +33,10 @@ cc -p -I/sys/include/npe -I /sys/include/npe/SDL2/ uxn2.c
 6l -o uxn2 uxn2.6
 ```
 
+If do not wish to build it yourself, you can [download linux binaries](https://rabbits.srht.site/uxn2/bin/uxn2).
+
+[![builds.sr.ht status](https://builds.sr.ht/~rabbits/uxn2.svg)](https://builds.sr.ht/~rabbits/uxn2?)
+
 ## Usage
 
 The first parameter is the rom file, the subsequent arguments will be accessible to the rom, via the [Console vector](https://wiki.xxiivv.com/site/varvara.html#console).
@@ -46,8 +50,8 @@ bin/uxn2 bin/example.rom arg1 arg2
 This repository comes with a copy of the compiled [Drifblim](https://git.sr.ht/~rabbits/drifblim) assembler. 
 
 ```sh
-cat etc/utils/drifblim.rom.txt | bin/uxn11 etc/utils/xh.rom > bin/drifblim.rom
-bin/uxn11 bin/drifblim.rom etc/tests/opctest.tal bin/opctest.rom
+cat etc/utils/drifblim.rom.txt | bin/uxn2 etc/utils/xh.rom > bin/drifblim.rom
+bin/uxn2 bin/drifblim.rom etc/tests/opctest.tal bin/opctest.rom
 ```
 
 ## Devices

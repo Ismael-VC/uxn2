@@ -12,7 +12,7 @@ sources:
 tasks:
 - build: |
     mkdir bin/
-    cc -I/usr/include/SDL2 -DNDEBUG -O2 -g0 -s -lSDL2 src/uxn2.c -o bin/uxn2 $(sdl2-config --cflags --libs)
+    cc -I/usr/include/SDL2 -DNDEBUG -O2 -g0 -s -lSDL2 uxn2/src/uxn2.c -o bin/uxn2 $(sdl2-config --cflags --libs)
 - upload: |
     tar -czf out.tar.gz bin/
     acurl() {
