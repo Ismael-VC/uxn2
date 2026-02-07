@@ -1,0 +1,23 @@
+environment:
+  BUILD_SUBMITTER: git.sr.ht
+  SITE: rabbits.srht.site/uxn2
+image: debian/stable
+packages:
+- curl
+- libsdl2-dev
+shell: false
+oauth: pages.sr.ht/PAGES:RW
+sources:
+- https://git.sr.ht/~rabbits/uxn2
+tasks:
+- build: |
+    mkdir bin/
+    cc -I/usr/include/SDL2 -DNDEBUG -O2 -g0 -s -lSDL2 src/uxn2.c -o bin/uxn2 $(sdl2-config --cflags --libs)
+- upload: |
+    tar -czf out.tar.gz bin/
+    acurl() {
+        set +x
+        curl -H "Authorization: Bearer ${OAUTH2_TOKEN}" "${@}"
+        set -x
+    }
+    acurl -fsS "https://pages.sr.ht/publish/${SITE}" -Fcontent=@out.tar.gz
