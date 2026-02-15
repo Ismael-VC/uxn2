@@ -54,8 +54,7 @@
 @|drawing )
 
 @<toggle-pos> ( -- )
-	.position/x LDZ2 #8000 NEQ2 ?{
-		#0000 DUP2 !<move> }
+	.position/x LDZ2 #8000 NEQ2 ?{ #0000 DUP2 !<move> }
 	#8000 DUP2 !<move>
 
 @<toggle-size> ( -- )
@@ -85,12 +84,13 @@
 	[ LIT2 71 -Screen/auto ] DEO
 	;fill-icn .Screen/addr DEO2
 	#f8
-	&>l ( -- )
+	&>l
 		#40 .Screen/sprite DEO
 		INC DUP ?&>l
-	POP
-	OVR2 <phex> #2018 DEO
-	DUP2 <phex> #0a18 DEO
+	POP OVR2 <phex>
+	#2018 DEO
+	DUP2 <phex>
+	#0a18 DEO
 	( | update )
 	.position/y STZ2
 	.position/x STZ2
@@ -114,9 +114,16 @@
 	.Screen/x DEI2k #0008 ADD2 ROT DEO2
 	.Screen/y DEI2k #0020 ADD2 ROT DEO2
 	#a140 ORA <draw-portrait>
+	( | pixels )
+	[ LIT2 00 -Screen/auto ] DEO
 	.position/x LDZ2 .Screen/x DEO2
 	.position/y LDZ2 .Screen/y DEO2
-	[ LIT2 00 -Screen/auto ] DEO
+	#43 .Screen/pixel DEO
+	.position/x LDZ2 #001f ADD2 .Screen/x DEO2
+	.position/y LDZ2 #001f ADD2 .Screen/y DEO2
+	#43 .Screen/pixel DEO
+	.position/x LDZ2 #0020 SUB2 .Screen/x DEO2
+	.position/y LDZ2 #0020 SUB2 .Screen/y DEO2
 	#43 .Screen/pixel DEO
 	JMP2r
 
@@ -170,7 +177,7 @@
 	#e2 .Screen/auto DEO
 	;guide-icn .Screen/addr DEO2
 	#0f00
-	&>l ( -- )
+	&>l
 		#01 .Screen/sprite DEO
 		INC GTHk ?&>l
 	POP2
@@ -179,7 +186,7 @@
 	#0008 .Screen/y DEO2
 	#01 .Screen/auto DEO
 	#0f00
-	&>ll ( -- )
+	&>ll
 		DUP <draw-circle>
 		INC GTHk ?&>ll
 	POP2
@@ -188,7 +195,7 @@
 	#0018 .Screen/y DEO2
 	#01 .Screen/auto DEO
 	#0f00
-	&>lll ( -- )
+	&>lll
 		DUP #80 ORA <draw-circle>
 		INC GTHk ?&>lll
 	POP2 JMP2r
@@ -210,10 +217,10 @@
 @<phex> ( short* -: )
 	SWP /b
 	&b ( byte -: )
-		DUP #04 SFT /c
+	DUP #04 SFT /c
 	&c ( byte -: )
-		#0f AND DUP #09 GTH #27 MUL ADD [ LIT "0 ] ADD #18 DEO
-		JMP2r
+	#0f AND DUP #09 GTH #27 MUL ADD [ LIT "0 ] ADD #18 DEO
+	JMP2r
 
 @guide-icn [ 8000 0000 0000 0000 ]
 
