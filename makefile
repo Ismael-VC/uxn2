@@ -13,7 +13,7 @@ test: bin/uxn2-debug tests
 	@ -bin/uxn2-debug -v
 	@ bin/uxn2-debug bin/opctest.rom
 	@ bin/uxn2-debug bin/system.rom
-	@ echo "foobar" | bin/uxn2-debug bin/console.rom "baz" "qux"
+	@ printf "ghi" | bin/uxn2-debug bin/console.rom "abc" "def"
 	@ bin/uxn2-debug bin/file.rom
 	@ bin/uxn2-debug bin/datetime.rom
 	@ bin/uxn2-debug bin/audio.rom
