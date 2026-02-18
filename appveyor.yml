@@ -41,7 +41,7 @@ build_script:
   - cmd: "dir src || echo ERROR: src folder missing!"
   - cmd: "mkdir bin"
   - cmd: "C:\\tools\\msys64\\mingw64\\bin\\gcc.exe -v || echo ERROR: gcc not found!"
-  - cmd: "C:\\tools\\msys64\\mingw64\\bin\\gcc.exe -v -DNDEBUG -O2 -g0 -s -static -lmingw32 -lSDL2main -lSDL2 -ldinput8 -ldxguid -ldsound -ldxgi -ldxerr8 -lhid -lsetupapi -ladvapi32 -lcomdlg32 -lshell32 -lshlwapi -lole32 -loleaut32 -limm32 -luser32 -lgdi32 -lwinmm -lversion -luuid -lws2_32 -lksuser src/uxn2.c -o bin/uxn2.exe"
+  - cmd: "C:\\tools\\msys64\\mingw64\\bin\\gcc.exe -v -DNDEBUG -O2 -g0 -s -static -lmingw32 -lSDL2main -lSDL2 -ldinput8 -ldxguid -ldsound -ldxgi -ldxerr8 -lhid -lsetupapi -ladvapi32 -lcomdlg32 -lshell32 -lshlwapi -lole32 -loleaut32 -limm32 -luser32 -lgdi32 -lwinmm -lversion -luuid -lws2_32 -lksuser -lwinspool -lrpcrt4 src/uxn2.c -o bin/uxn2.exe 2>&1"
   - cmd: "dir bin || echo ERROR: bin empty!"
   - cmd: "if exist bin\\uxn2.exe (echo SUCCESS: exe created) else (echo ERROR: exe NOT created! & exit /b 1)"
 
