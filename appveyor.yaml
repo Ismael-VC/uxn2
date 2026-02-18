@@ -1,5 +1,7 @@
 version: '{build}'
+
 build: off
+
 branches:
   only:
     - main
@@ -18,12 +20,19 @@ install:
       C:\tools\msys64\usr\bin\pacman.exe -S --noconfirm mingw-w64-x86_64-gcc mingw-w64-x86_64-SDL2
 
 build_script:
+  - cmd: echo Current dir: %CD%
+  - cmd: dir src || echo src folder not found!
+  - cmd: mkdir bin || echo bin already exists
   - cmd: >-
-      mkdir bin
+      C:\tools\msys64\mingw64\bin\gcc.exe -v || echo gcc not working!
+  - cmd: >-
       C:\tools\msys64\mingw64\bin\gcc.exe -DNDEBUG -O2 -g0 -s -static ^
         -lmingw32 -lSDL2main -lSDL2 ^
         -luser32 -lgdi32 -lwinmm -limm32 -lole32 -loleaut32 -lversion -luuid ^
+        -ldinput8 -ldxguid -lsetupapi -lwinspool -lws2_32 ^
         src/uxn2.c -o bin/uxn2.exe
+  - cmd: dir bin || echo bin dir empty!
+  - cmd: if exist bin\uxn2.exe (echo SUCCESS: uxn2.exe created) else (echo ERROR: uxn2.exe NOT created! & exit /b 1)
 
 artifacts:
   - path: bin/uxn2.exe
