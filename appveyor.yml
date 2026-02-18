@@ -23,7 +23,6 @@ install:
 
 build_script:
   - cmd: echo === Build script starting ===
-  - cmd: echo "Current dir: %CD%"
   - cmd: dir src || echo ERROR: src folder missing!
   - cmd: mkdir bin
   - cmd: C:\tools\msys64\mingw64\bin\gcc.exe -v || echo ERROR: gcc not found!
