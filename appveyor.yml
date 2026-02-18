@@ -3,6 +3,8 @@ version: '{build}'
 build: off
 test: off
 
+clone_depth: 1
+
 branches:
   only:
     - main
@@ -10,13 +12,20 @@ branches:
 image: Visual Studio 2022
 
 cache:
-  - C:\msys64\var\cache\pacman\pkg -> appveyor.yml     # Re-download only if yml changes
-  - C:\msys64\mingw64 -> appveyor.yml                 # Installed toolchain + SDL2 libs/headers
-  - C:\ProgramData\chocolatey\cache -> appveyor.yml  # Optional: choco downloads
+  - C:\msys64\var\cache\pacman\pkg -> appveyor.yml
+  - C:\msys64\mingw64 -> appveyor.yml
+  - C:\ProgramData\chocolatey\cache -> appveyor.yml
 
 environment:
   matrix:
     - MINGW_DIR: C:\msys64\mingw64
+
+init:
+  - cmd: "echo APPVEYOR_REPO_COMMIT = %APPVEYOR_REPO_COMMIT%"
+  - ps: |
+      $short = $env:APPVEYOR_REPO_COMMIT.Substring(0,7)
+      Set-AppveyorBuildVariable -Name SHORT_COMMIT -Value $short
+      Write-Host "SHORT_COMMIT set to $short"
 
 install:
   - cmd: "echo === Starting install phase ==="
@@ -32,13 +41,13 @@ build_script:
   - cmd: "dir src || echo ERROR: src folder missing!"
   - cmd: "mkdir bin"
   - cmd: "C:\\tools\\msys64\\mingw64\\bin\\gcc.exe -v || echo ERROR: gcc not found!"
-  - cmd: "C:\\tools\\msys64\\mingw64\\bin\\gcc.exe -DNDEBUG -O2 -g0 -s -static -lmingw32 -lSDL2main -lSDL2 -ladvapi32 -lcomdlg32 -ldinput8 -ldxguid -ldxgi -lhid -loleaut32 -lsetupapi -lshell32 -lshlwapi -luser32 -lgdi32 -lwinmm -limm32 -lole32 -lversion -luuid -lws2_32 src/uxn2.c -o bin/uxn2.exe"
+  - cmd: "C:\\tools\\msys64\\mingw64\\bin\\gcc.exe -DNDEBUG -O2 -g0 -s -static -lmingw32 -lSDL2main -lSDL2 -ldinput8 -ldxguid -ldsound -ldxgi -ldxerr8 -lhid -lsetupapi -ladvapi32 -lcomdlg32 -lshell32 -lshlwapi -lole32 -loleaut32 -limm32 -luser32 -lgdi32 -lwinmm -lversion -luuid -lws2_32 -lksuser src/uxn2.c -o bin/uxn2.exe"
   - cmd: "dir bin || echo ERROR: bin empty!"
   - cmd: "if exist bin\\uxn2.exe (echo SUCCESS: exe created) else (echo ERROR: exe NOT created! & exit /b 1)"
 
 artifacts:
   - path: bin/uxn2.exe
-    name: uxn2.exe
+    name: uxn2-main-$(SHORT_COMMIT).exe
 
 on_finish:
   - cmd: "if exist bin\\uxn2.exe (echo Artifact should be there) else (echo No exe - check compile)"
