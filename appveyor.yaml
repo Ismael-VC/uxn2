@@ -1,0 +1,33 @@
+version: '{build}'
+
+branches:
+  only:
+    - main
+
+image: Visual Studio 2022
+
+environment:
+  matrix:
+    - MINGW_DIR: C:\msys64\mingw64
+
+install:
+  - cmd: >-
+      choco install msys2 --confirm --yes
+      refreshenv
+      C:\tools\msys64\usr\bin\pacman.exe -Syu --noconfirm
+      C:\tools\msys64\usr\bin\pacman.exe -S --noconfirm mingw-w64-x86_64-gcc mingw-w64-x86_64-SDL2
+
+build_script:
+  - cmd: >-
+      mkdir bin
+      C:\tools\msys64\mingw64\bin\gcc.exe -DNDEBUG -O2 -g0 -s -static ^
+        -lmingw32 -lSDL2main -lSDL2 ^
+        -luser32 -lgdi32 -lwinmm -limm32 -lole32 -loleaut32 -lversion -luuid ^
+        src/uxn2.c -o bin/uxn2.exe
+
+artifacts:
+  - path: bin/uxn2.exe
+    name: uxn2.exe
+
+test: off
+deploy: off
