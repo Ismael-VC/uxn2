@@ -30,6 +30,8 @@ typedef Uint8 (*dei_handler)(void);
 
 static Uint8 *ram, dev[0x100], ptr[2], stk[2][0x100];
 static unsigned int uxn_eval(Uint16 pc);
+static int console_vector, screen_vector, controller_vector, mouse_vector;
+static int rX, rY, rA, rMX, rMY, rMA, rML, rDX, rDY, rL1, rL2;
 
 /* clang-format off */
 
@@ -91,6 +93,8 @@ system_reboot(const unsigned int soft)
 	else
 		memset(ram, 0, 0x10000);
 	ptr[0] = ptr[1] = 0;
+	console_vector = screen_vector = controller_vector = mouse_vector = 0;
+	rX = rY = rA = rMX = rMY = rMA = rML = rDX = rDY = rL1 = rL2 = 0;
 	return system_load(system_boot_path);
 }
 
@@ -132,8 +136,6 @@ static void system_deo_print(void) { system_print("WST", 0), system_print("RST",
 #define CONSOLE_EOA 0x3
 #define CONSOLE_END 0x4
 
-static int console_vector;
-
 static unsigned int
 console_input(int c, unsigned int type)
 {
@@ -162,8 +164,7 @@ static int emu_zoom = 1;
 static int screen_reqsize, screen_reqdraw;
 static int screen_width, screen_height, screen_wmar2, screen_hmar2;
 static int screen_x1, screen_y1, screen_x2, screen_y2;
-static int screen_vector, *screen_pixels, screen_palette[16];
-static int rX, rY, rA, rMX, rMY, rMA, rML, rDX, rDY;
+static int *screen_pixels, screen_palette[16];
 static Uint8 *screen_layers;
 
 static const Uint8 blend_lut[16][2][4] = {
@@ -561,8 +562,6 @@ static void audio_play3(void) { audio_play(3, &dev[0x60]); }
 /*
 @|Controller -------------------------------------------------------- */
 
-static unsigned int controller_vector;
-
 static void
 controller_down(Uint8 mask)
 {
@@ -599,8 +598,6 @@ controller_deo_vector(void)
 
 /*
 @|Mouse ------------------------------------------------------------- */
-
-static unsigned int mouse_vector;
 
 static void
 mouse_down(Uint8 mask)
@@ -662,7 +659,6 @@ typedef struct {
 
 static UxnFile ufs[2];
 static Uint8 dirbuf[0x10000], *_dirbuf = dirbuf;
-static unsigned int rL1, rL2;
 
 static void
 make_pathfile(char *pathbuf, const char *filepath, const char *basename)
@@ -1405,7 +1401,7 @@ main(int argc, char **argv)
 {
 	int i = 1;
 	if(argc == 2 && argv[1][0] == '-' && argv[1][1] == 'v')
-		return !fprintf(stdout, "%s - Varvara Emulator, 15 Feb 2026.\n", argv[0]);
+		return !fprintf(stdout, "%s - Varvara Emulator, 17 Feb 2026.\n", argv[0]);
 	else if(argc == 1)
 		return !fprintf(stdout, "usage: %s [-v] file.rom [args..]\n", argv[0]);
 	else if(!system_boot(argv[i++], argc > 2))
