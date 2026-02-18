@@ -14,25 +14,26 @@ environment:
     - MINGW_DIR: C:\msys64\mingw64
 
 install:
-  - cmd: echo === Starting install phase ===
-  - cmd: choco install msys2 --confirm --yes
-  - cmd: refreshenv
-  - cmd: C:\tools\msys64\usr\bin\pacman.exe -Syu --noconfirm
-  - cmd: C:\tools\msys64\usr\bin\pacman.exe -S --noconfirm mingw-w64-x86_64-gcc mingw-w64-x86_64-SDL2
-  - cmd: echo === Install done ===
+  - cmd: "echo === Starting install phase ==="
+  - cmd: "choco install msys2 --confirm --yes"
+  - cmd: "refreshenv"
+  - cmd: "C:\\tools\\msys64\\usr\\bin\\pacman.exe -Syu --noconfirm"
+  - cmd: "C:\\tools\\msys64\\usr\\bin\\pacman.exe -S --noconfirm mingw-w64-x86_64-gcc mingw-w64-x86_64-SDL2"
+  - cmd: "echo === Install done ==="
 
 build_script:
-  - cmd: echo === Build script starting ===
-  - cmd: dir src || echo ERROR: src folder missing!
-  - cmd: mkdir bin
-  - cmd: C:\tools\msys64\mingw64\bin\gcc.exe -v || echo ERROR: gcc not found!
-  - cmd: C:\tools\msys64\mingw64\bin\gcc.exe -DNDEBUG -O2 -g0 -s -static -lmingw32 -lSDL2main -lSDL2 -luser32 -lgdi32 -lwinmm -limm32 -lole32 -loleaut32 -lversion -luuid -ldinput8 -ldxguid -ldxgi -lsetupapi -lwinspool -lws2_32 src/uxn2.c -o bin/uxn2.exe
-  - cmd: dir bin || echo ERROR: bin empty!
-  - cmd: if exist bin\uxn2.exe (echo SUCCESS: exe created) else (echo ERROR: exe NOT created! & exit /b 1)
+  - cmd: "echo === Build script starting ==="
+  - cmd: "echo Current dir: %CD%"
+  - cmd: "dir src || echo ERROR: src folder missing!"
+  - cmd: "mkdir bin"
+  - cmd: "C:\\tools\\msys64\\mingw64\\bin\\gcc.exe -v || echo ERROR: gcc not found!"
+  - cmd: "C:\\tools\\msys64\\mingw64\\bin\\gcc.exe -DNDEBUG -O2 -g0 -s -static -lmingw32 -lSDL2main -lSDL2 -luser32 -lgdi32 -lwinmm -limm32 -lole32 -loleaut32 -lversion -luuid -ldinput8 -ldxguid -ldxgi -lsetupapi -lwinspool -lws2_32 src/uxn2.c -o bin/uxn2.exe"
+  - cmd: "dir bin || echo ERROR: bin empty!"
+  - cmd: "if exist bin\\uxn2.exe (echo SUCCESS: exe created) else (echo ERROR: exe NOT created! & exit /b 1)"
 
 artifacts:
   - path: bin/uxn2.exe
     name: uxn2.exe
 
 on_finish:
-  - cmd: if exist bin\uxn2.exe (echo Artifact should be there) else (echo No exe - check compile)
+  - cmd: "if exist bin\\uxn2.exe (echo Artifact should be there) else (echo No exe - check compile)"
