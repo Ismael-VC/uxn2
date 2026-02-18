@@ -9,6 +9,11 @@ branches:
 
 image: Visual Studio 2022
 
+cache:
+  - C:\msys64\var\cache\pacman\pkg -> appveyor.yml     # Re-download only if yml changes
+  - C:\msys64\mingw64 -> appveyor.yml                 # Installed toolchain + SDL2 libs/headers
+  - C:\ProgramData\chocolatey\cache -> appveyor.yml  # Optional: choco downloads
+
 environment:
   matrix:
     - MINGW_DIR: C:\msys64\mingw64
