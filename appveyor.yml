@@ -1,0 +1,69 @@
+version: '{build}'
+
+build: off
+test: off
+clone_depth: 1
+
+branches:
+  only:
+    - main
+
+image: Visual Studio 2022
+
+cache:
+  - C:\msys64\var\cache\pacman\pkg -> appveyor.yml
+  - C:\msys64\mingw64 -> appveyor.yml
+
+environment:
+  matrix:
+    - MINGW_DIR: C:\tools\msys64\mingw64
+
+init:
+  - cmd: "echo APPVEYOR_REPO_COMMIT = %APPVEYOR_REPO_COMMIT%"
+  - ps: |
+      $short = $env:APPVEYOR_REPO_COMMIT.Substring(0,7)
+      Set-AppveyorBuildVariable -Name SHORT_COMMIT -Value $short
+      Write-Host "SHORT_COMMIT set to $short"
+
+install:
+  - cmd: "C:\\tools\\msys64\\usr\\bin\\pacman.exe -Syu --noconfirm"
+  - cmd: "C:\\tools\\msys64\\usr\\bin\\pacman.exe -S --noconfirm mingw-w64-x86_64-gcc mingw-w64-x86_64-SDL2"
+
+build_script:
+  - cmd: "mkdir bin"
+  - ps: |
+      $gcc = "C:\tools\msys64\mingw64\bin\gcc.exe"
+      $args = @(
+        "-DNDEBUG", "-O2", "-g0", "-s", "-static",
+        "-IC:\tools\msys64\mingw64\include\SDL2",
+        "-LC:\tools\msys64\mingw64\lib",
+        "src/uxn2.c",
+        "-o", "bin/uxn2.exe",
+        "-lmingw32", "-lSDL2main", "-lSDL2",
+        "-ldinput8", "-ldxguid", "-ldsound", "-ldxgi", "-ldxerr8",
+        "-lhid", "-lsetupapi", "-ladvapi32", "-lcomdlg32",
+        "-lshell32", "-lshlwapi", "-lole32", "-loleaut32",
+        "-limm32", "-luser32", "-lgdi32", "-lwinmm",
+        "-lversion", "-luuid", "-lws2_32", "-lksuser",
+        "-lwinspool", "-lrpcrt4"
+      )
+      Write-Host "Running: $gcc $args"
+      $proc = Start-Process -FilePath $gcc `
+        -ArgumentList $args `
+        -NoNewWindow -Wait -PassThru `
+        -RedirectStandardError "gcc_err.txt" `
+        -RedirectStandardOutput "gcc_out.txt"
+      Write-Host "=== STDOUT ==="
+      if (Test-Path gcc_out.txt) { Get-Content gcc_out.txt }
+      Write-Host "=== STDERR ==="
+      if (Test-Path gcc_err.txt) { Get-Content gcc_err.txt }
+      Write-Host "=== Exit code: $($proc.ExitCode) ==="
+      if ($proc.ExitCode -ne 0) { exit 1 }
+  - cmd: "if exist bin\\uxn2.exe (echo SUCCESS: exe created) else (echo ERROR: exe NOT created & exit /b 1)"
+
+artifacts:
+  - path: bin/uxn2.exe
+    name: uxn2-main-$(SHORT_COMMIT).exe
+
+on_finish:
+  - cmd: "if exist bin\\uxn2.exe (echo Artifact ready) else (echo No exe)"
